@@ -1,0 +1,3508 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>雙渦輪增壓 V8 引擎展示器 | Interactive 3D Twin-Turbo V8 Visualizer</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+  <style>
+    :root {
+      --bg-studio: #0a0d12;
+      --panel-bg: rgba(15, 20, 29, 0.82);
+      --panel-border: rgba(148, 163, 184, 0.18);
+      --accent-cyan: #38bdf8;
+      --accent-amber: #f59e0b;
+      --accent-red: #ef4444;
+    }
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: var(--bg-studio);
+      color: #f1f5f9;
+      font-family: 'Inter', 'Noto Sans TC', -apple-system, BlinkMacSystemFont, sans-serif;
+      user-select: none;
+    }
+    .font-mono-tech {
+      font-family: 'JetBrains Mono', monospace;
+      font-variant-numeric: tabular-nums;
+    }
+    #canvas-container {
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: 1;
+      touch-action: none;
+    }
+    .hud-glass {
+      background: var(--panel-bg);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--panel-border);
+      box-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.65);
+    }
+    input[type="range"].tech-slider {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 6px;
+      border-radius: 999px;
+      background: rgba(51, 65, 85, 0.85);
+      outline: none;
+      cursor: pointer;
+    }
+    input[type="range"].tech-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: #38bdf8;
+      border: 2px solid #0f172a;
+      box-shadow: 0 0 10px rgba(56, 189, 248, 0.65);
+      cursor: pointer;
+      transition: transform 0.12s ease, background-color 0.12s ease;
+    }
+    input[type="range"].tech-slider::-webkit-slider-thumb:hover {
+      transform: scale(1.15);
+      background: #7dd3fc;
+    }
+    input[type="range"].tech-slider.amber-thumb::-webkit-slider-thumb {
+      background: #f59e0b;
+      box-shadow: 0 0 10px rgba(245, 158, 11, 0.65);
+    }
+    input[type="range"].tech-slider.emerald-thumb::-webkit-slider-thumb {
+      background: #10b981;
+      box-shadow: 0 0 10px rgba(16, 185, 129, 0.65);
+    }
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+    .tech-scrollbar {
+      scrollbar-width: thin;
+      scrollbar-color: rgba(100, 116, 139, 0.55) transparent;
+    }
+    .tech-scrollbar::-webkit-scrollbar {
+      width: 5px;
+    }
+    .tech-scrollbar::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .tech-scrollbar::-webkit-scrollbar-thumb {
+      background: rgba(100, 116, 139, 0.55);
+      border-radius: 999px;
+    }
+    .tech-scrollbar::-webkit-scrollbar-thumb:hover {
+      background: rgba(148, 163, 184, 0.8);
+    }
+  </style>
+</head>
+<body>
+  <!-- Fullscreen 3D Viewport -->
+  <div id="canvas-container"></div>
+
+  <!-- Loading Overlay -->
+  <div id="loading-overlay" class="fixed inset-0 z-50 flex flex-col items-center justify-center bg-[#0a0d12] transition-opacity duration-500">
+    <div class="w-12 h-12 rounded-full border-2 border-sky-500/30 border-t-sky-400 animate-spin mb-4"></div>
+    <div class="text-sm font-semibold tracking-wider text-slate-200">正在建構 3D 雙渦輪增壓 V8 引擎與流體物理模型...</div>
+    <div class="text-xs text-slate-400 mt-1 font-mono-tech">90° CROSS-PLANE CRANK · DOHC 32V · TWIN-TURBO</div>
+  </div>
+
+  <!-- Top Telemetry & Camera Preset Bar -->
+  <header id="main-header" class="fixed top-2 left-2 right-2 md:top-3 md:left-4 md:right-4 z-20 pointer-events-none flex flex-col gap-1.5">
+    <div class="flex flex-wrap items-center justify-between gap-2">
+      <!-- Title Badge & Active Firing Status -->
+      <div id="hud-title-badge" class="hud-glass pointer-events-auto rounded-xl px-3 py-1.5 md:px-4 md:py-2 flex items-center gap-2.5 w-auto h-auto">
+        <div id="engine-status-led" class="w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-[0_0_10px_#34d399]"></div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="text-xs md:text-sm font-bold tracking-wide text-white">雙渦輪增壓 V8 引擎展示器</h1>
+            <span class="hidden sm:inline-block text-[10px] font-mono-tech px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-300 border border-sky-400/25">4.1L DOHC 32V</span>
+          </div>
+          <p id="hud-subtitle" class="hidden md:block text-[10px] text-slate-400 font-mono-tech">點火順序 1-8-7-2-6-5-4-3 · 交叉平面曲軸 · 雙渦輪旁通增壓</p>
+        </div>
+        <button id="btn-expand-hud" class="hidden ml-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-sky-500/25 text-sky-200 border border-sky-400/40 hover:bg-sky-500/35 transition cursor-pointer">
+          展開面板
+        </button>
+      </div>
+
+      <!-- Live Telemetry Gauges -->
+      <div id="hud-telemetry-bar" class="hud-glass pointer-events-auto rounded-xl px-2.5 py-1.5 md:px-3.5 md:py-2 flex items-center gap-2.5 md:gap-3.5 overflow-x-auto no-scrollbar max-w-full">
+        <div class="flex flex-col min-w-[62px]">
+          <span class="text-[9px] md:text-[10px] text-slate-400">引擎轉速</span>
+          <span id="telem-engine-rpm" class="text-xs md:text-sm font-bold font-mono-tech text-white">1,800 <span class="text-[10px] font-normal text-slate-400">RPM</span></span>
+        </div>
+        <div class="w-px h-6 bg-slate-700/70"></div>
+        <div class="flex flex-col min-w-[74px]">
+          <span class="text-[9px] md:text-[10px] text-slate-400">左渦輪 (2-4-6-8)</span>
+          <span id="telem-turbo-l" class="text-xs md:text-sm font-bold font-mono-tech text-sky-300">28,000 <span class="text-[10px] font-normal text-slate-400">RPM</span></span>
+        </div>
+        <div class="w-px h-6 bg-slate-700/70"></div>
+        <div class="flex flex-col min-w-[74px]">
+          <span class="text-[9px] md:text-[10px] text-slate-400">右渦輪 (1-3-5-7)</span>
+          <span id="telem-turbo-r" class="text-xs md:text-sm font-bold font-mono-tech text-sky-300">28,000 <span class="text-[10px] font-normal text-slate-400">RPM</span></span>
+        </div>
+        <div class="w-px h-6 bg-slate-700/70"></div>
+        <div class="flex flex-col min-w-[66px]">
+          <span class="text-[9px] md:text-[10px] text-slate-400">歧管表壓</span>
+          <span id="telem-boost" class="text-xs md:text-sm font-bold font-mono-tech text-emerald-300">+0.05 <span class="text-[10px] font-normal text-slate-400">bar</span></span>
+        </div>
+        <div class="w-px h-6 bg-slate-700/70 hidden sm:block"></div>
+        <div class="hidden sm:flex flex-col min-w-[48px]">
+          <span class="text-[9px] md:text-[10px] text-slate-400">旁通閥</span>
+          <span id="telem-wg" class="text-xs md:text-sm font-bold font-mono-tech text-amber-300">0%</span>
+        </div>
+        <div class="w-px h-6 bg-slate-700/70 hidden xl:block"></div>
+        <div class="hidden xl:flex flex-col min-w-[92px]">
+          <span class="text-[9px] md:text-[10px] text-slate-400">當前點火/狀態</span>
+          <span id="telem-active-cyl" class="text-xs font-bold font-mono-tech text-orange-300">#1 缸 · 作功</span>
+        </div>
+      </div>
+
+      <!-- Quality, Collapse & Verification Guide Buttons -->
+      <div id="hud-top-actions" class="hidden lg:flex items-center gap-2 pointer-events-auto">
+        <button id="btn-quality" class="hud-glass rounded-xl px-3 py-2 text-xs font-medium text-slate-200 hover:bg-slate-800/80 transition cursor-pointer">
+          畫質：<span id="label-quality" class="text-sky-300 font-semibold">高</span>
+        </button>
+        <button id="btn-toggle-hud" class="hud-glass rounded-xl px-3 py-2 text-xs font-medium text-slate-200 hover:bg-slate-800/80 transition cursor-pointer">
+          收合面板
+        </button>
+        <button id="btn-guide" class="hud-glass rounded-xl px-3 py-2 text-xs font-medium text-amber-300 hover:bg-slate-800/80 transition cursor-pointer border-amber-400/30">
+          操作與驗證導覽
+        </button>
+      </div>
+    </div>
+
+    <!-- Camera Preset Bar -->
+    <div id="hud-camera-bar" class="flex items-center gap-1.5 overflow-x-auto no-scrollbar pointer-events-auto pb-0.5">
+      <div class="hud-glass rounded-xl p-1 flex items-center gap-1">
+        <button data-cam="default" class="cam-btn active px-2.5 py-1 rounded-lg text-[11px] font-medium transition cursor-pointer bg-sky-500/25 text-sky-200 border border-sky-400/40">預設總覽</button>
+        <button data-cam="crank" class="cam-btn px-2.5 py-1 rounded-lg text-[11px] font-medium transition cursor-pointer text-slate-300 hover:bg-slate-800/70">曲軸與連桿</button>
+        <button data-cam="valves" class="cam-btn px-2.5 py-1 rounded-lg text-[11px] font-medium transition cursor-pointer text-slate-300 hover:bg-slate-800/70">汽門與燃燒室</button>
+        <button data-cam="timing" class="cam-btn px-2.5 py-1 rounded-lg text-[11px] font-medium transition cursor-pointer text-slate-300 hover:bg-slate-800/70">正時鏈條</button>
+        <button data-cam="turbo" class="cam-btn px-2.5 py-1 rounded-lg text-[11px] font-medium transition cursor-pointer text-slate-300 hover:bg-slate-800/70">渦輪剖面</button>
+        <button data-cam="airflow" class="cam-btn px-2.5 py-1 rounded-lg text-[11px] font-medium transition cursor-pointer text-slate-300 hover:bg-slate-800/70">進排氣全路徑</button>
+        <div class="w-px h-4 bg-slate-700 mx-0.5"></div>
+        <button id="btn-cam-reset" title="復位視角" class="px-2 py-1 rounded-lg text-[11px] font-medium text-slate-300 hover:text-white hover:bg-slate-800/70 transition cursor-pointer">
+          復位視角
+        </button>
+      </div>
+      <!-- Mobile quick triggers -->
+      <button id="btn-quality-mobile" class="lg:hidden hud-glass rounded-xl px-2.5 py-1.5 text-[11px] font-medium text-slate-200 shrink-0 cursor-pointer">
+        畫質:<span id="label-quality-mobile" class="text-sky-300">高</span>
+      </button>
+      <button id="btn-toggle-hud-mobile" class="lg:hidden hud-glass rounded-xl px-2.5 py-1.5 text-[11px] font-medium text-slate-200 shrink-0 cursor-pointer">
+        收合
+      </button>
+      <button id="btn-guide-mobile" class="lg:hidden hud-glass rounded-xl px-2.5 py-1.5 text-[11px] font-medium text-amber-300 shrink-0 cursor-pointer">
+        驗證導覽
+      </button>
+    </div>
+  </header>
+
+  <!-- Desktop Right Inspector Panel -->
+  <aside id="desktop-inspector" class="hidden md:flex fixed top-28 right-4 z-20 w-80 flex-col gap-2.5 pointer-events-none max-h-[calc(100vh-315px)] overflow-y-auto tech-scrollbar pr-0.5 pb-2 transition-opacity duration-200">
+    <!-- View Mode Switcher -->
+    <div class="hud-glass pointer-events-auto rounded-2xl p-2.5">
+      <div class="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5 px-1">檢視模式 (View Mode)</div>
+      <div class="grid grid-cols-3 gap-1 bg-slate-950/60 p-1 rounded-xl border border-slate-800">
+        <button data-mode="solid" class="mode-btn py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer bg-sky-500 text-slate-950 shadow">完整外殼</button>
+        <button data-mode="transparent" class="mode-btn py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer text-slate-300 hover:text-white">透明外殼</button>
+        <button data-mode="exploded" class="mode-btn py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer text-slate-300 hover:text-white">拆解模式</button>
+      </div>
+    </div>
+
+    <!-- Transparent & Cutaway Panel -->
+    <div id="panel-transparent" class="hidden hud-glass pointer-events-auto rounded-2xl p-3 flex-col gap-2.5">
+      <div class="flex items-center justify-between">
+        <span class="text-xs font-semibold text-sky-300">外殼透明度與剖面控制</span>
+        <button id="btn-opacity-preset" class="text-[10px] px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 cursor-pointer">重設 75%</button>
+      </div>
+      <div class="space-y-2 text-[11px]">
+        <div>
+          <div class="flex justify-between text-slate-300 mb-0.5"><span>汽缸體 (Cylinder Block)</span><span id="val-op-block" class="font-mono-tech text-sky-300">75%</span></div>
+          <input id="sl-op-block" type="range" min="0" max="100" value="75" class="tech-slider" />
+        </div>
+        <div>
+          <div class="flex justify-between text-slate-300 mb-0.5"><span>汽缸頭 (Cylinder Heads)</span><span id="val-op-head" class="font-mono-tech text-sky-300">75%</span></div>
+          <input id="sl-op-head" type="range" min="0" max="100" value="75" class="tech-slider" />
+        </div>
+        <div>
+          <div class="flex justify-between text-slate-300 mb-0.5"><span>渦輪外殼 (Turbo Housings)</span><span id="val-op-turbo" class="font-mono-tech text-sky-300">75%</span></div>
+          <input id="sl-op-turbo" type="range" min="0" max="100" value="75" class="tech-slider" />
+        </div>
+        <div>
+          <div class="flex justify-between text-slate-300 mb-0.5"><span>進排氣管路 (Intake/Exhaust)</span><span id="val-op-pipe" class="font-mono-tech text-sky-300">70%</span></div>
+          <input id="sl-op-pipe" type="range" min="0" max="100" value="70" class="tech-slider" />
+        </div>
+      </div>
+
+      <!-- Cutaway Toggles -->
+      <div class="grid grid-cols-2 gap-1.5 pt-1 border-t border-slate-800">
+        <button id="btn-cyl-cutaway" class="py-1.5 px-2 rounded-xl text-[11px] font-semibold border border-slate-700 bg-slate-800/70 text-slate-200 hover:bg-slate-700 transition cursor-pointer flex items-center justify-center gap-1.5">
+          <span class="w-2 h-2 rounded-full bg-rose-400"></span>單缸剖面
+        </button>
+        <button id="btn-turbo-cutaway" class="py-1.5 px-2 rounded-xl text-[11px] font-semibold border border-slate-700 bg-slate-800/70 text-slate-200 hover:bg-slate-700 transition cursor-pointer flex items-center justify-center gap-1.5">
+          <span class="w-2 h-2 rounded-full bg-amber-400"></span>單顆渦輪剖面
+        </button>
+      </div>
+
+      <!-- 8-Cylinder Selector & Live Four-Stroke Telemetry -->
+      <div class="pt-1.5 border-t border-slate-800">
+        <div class="flex items-center justify-between mb-1.5">
+          <span class="text-[11px] font-semibold text-slate-200">點選汽缸觀察四行程</span>
+          <span class="text-[10px] text-slate-400">點火 1-8-7-2-6-5-4-3</span>
+        </div>
+        <div class="grid grid-cols-4 gap-1 mb-2" id="cyl-selector-grid"></div>
+        <div id="cyl-detail-card" class="rounded-xl bg-slate-950/75 border border-slate-800 p-2.5 space-y-1.5">
+          <div class="flex items-center justify-between">
+            <span id="cyl-card-title" class="text-xs font-bold text-white">第 1 缸 · 右列 A</span>
+            <span id="cyl-stroke-badge" class="px-2 py-0.5 rounded-md text-[11px] font-bold bg-orange-500/20 text-orange-300 border border-orange-400/30">作功 (Power)</span>
+          </div>
+          <div class="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] font-mono-tech">
+            <div class="flex justify-between"><span class="text-slate-400 font-sans">循環相位</span><span id="cyl-local-deg" class="text-slate-100">0° / 720°</span></div>
+            <div class="flex justify-between"><span class="text-slate-400 font-sans">活塞運動</span><span id="cyl-piston-dir" class="text-sky-300">上止點 TDC</span></div>
+            <div class="flex justify-between"><span class="text-slate-400 font-sans">進/排揚程</span><span id="cyl-valve-lift" class="text-slate-200">0.0 / 0.0 mm</span></div>
+            <div class="flex justify-between"><span class="text-slate-400 font-sans">火星塞</span><span id="cyl-spark-state" class="text-amber-300">點火 ⚡</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Exploded View Panel -->
+    <div id="panel-exploded" class="hidden hud-glass pointer-events-auto rounded-2xl p-3 flex-col gap-2.5">
+      <div class="flex items-center justify-between">
+        <span class="text-xs font-semibold text-amber-300">3D 機構拆解控制</span>
+        <span id="val-explode-pct" class="text-xs font-mono-tech font-bold text-amber-300">0%</span>
+      </div>
+      <p class="text-[11px] text-slate-300 leading-relaxed">
+        模擬已自動暫停並鎖定當前曲軸相位與渦輪增壓狀態。拖曳滑桿依裝配路徑展開各總成；切回其他模式將先平順組裝復位再接續運轉。
+      </p>
+      <input id="sl-explode" type="range" min="0" max="100" value="0" class="tech-slider amber-thumb" />
+      <div class="grid grid-cols-3 gap-1.5">
+        <button data-exp="0" class="exp-preset-btn py-1 rounded-lg text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-200 cursor-pointer">0% 組裝</button>
+        <button data-exp="50" class="exp-preset-btn py-1 rounded-lg text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-200 cursor-pointer">50% 半拆</button>
+        <button data-exp="100" class="exp-preset-btn py-1 rounded-lg text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-200 cursor-pointer">100% 全拆</button>
+      </div>
+      <div class="text-[10px] text-slate-400 space-y-0.5 pt-1 border-t border-slate-800">
+        <div>1. 進氣管路、中冷器、節氣門與氣門室蓋向上/向前移出</div>
+        <div>2. 左右雙渦輪、4合1排氣歧管與排氣管向兩側展開</div>
+        <div>3. 兩列汽缸頭沿 ±45° 汽缸軸線分離，油底殼與曲軸向下展開</div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Bottom Control Dock -->
+  <footer id="bottom-dock" class="fixed bottom-2 left-2 right-2 md:bottom-4 md:left-4 md:right-4 z-20 pointer-events-none flex flex-col items-center transition-opacity duration-200">
+    <div class="hud-glass pointer-events-auto w-full max-w-6xl rounded-2xl p-2.5 md:p-3.5 flex flex-col gap-2 md:gap-2.5 max-h-[43vh] md:max-h-none overflow-y-auto no-scrollbar">
+      <!-- Mobile-only Sub-Navigation Tabs -->
+      <div class="flex md:hidden items-center justify-between gap-1 bg-slate-950/70 p-1 rounded-xl border border-slate-800">
+        <button data-mtab="controls" class="mtab-btn flex-1 py-1 rounded-lg text-[11px] font-semibold bg-sky-500 text-slate-950">動力與負載</button>
+        <button data-mtab="views" class="mtab-btn flex-1 py-1 rounded-lg text-[11px] font-semibold text-slate-300">外殼與拆解</button>
+        <button data-mtab="timing" class="mtab-btn flex-1 py-1 rounded-lg text-[11px] font-semibold text-slate-300">汽缸與曲軸</button>
+      </div>
+
+      <!-- SECTION A: Engine Power, Speed, Load, Dyno & Airflow -->
+      <div id="dock-sec-controls" class="flex flex-col gap-2">
+        <div class="flex flex-wrap items-center justify-between gap-1.5">
+          <div class="flex items-center gap-1.5">
+            <button id="btn-ignition" class="px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-400/40 hover:bg-emerald-500/30 transition cursor-pointer flex items-center gap-1.5">
+              <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+              <span id="label-ignition">運轉中 (熄火)</span>
+            </button>
+            <button id="btn-play-pause" class="px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 transition cursor-pointer">
+              暫停
+            </button>
+            <button id="btn-reset-sim" class="px-2.5 py-1.5 rounded-xl text-xs font-medium bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700/80 transition cursor-pointer">
+              重置
+            </button>
+          </div>
+
+          <!-- Playback Speed Buttons -->
+          <div class="flex items-center gap-1 bg-slate-950/60 p-1 rounded-xl border border-slate-800">
+            <span class="text-[10px] text-slate-400 px-1.5 hidden sm:inline">速度</span>
+            <button data-speed="1" class="speed-btn px-2 py-0.5 rounded-lg text-[11px] font-mono-tech font-semibold bg-sky-500 text-slate-950 cursor-pointer">100%</button>
+            <button data-speed="0.25" class="speed-btn px-2 py-0.5 rounded-lg text-[11px] font-mono-tech font-semibold text-slate-300 hover:text-white cursor-pointer">25%</button>
+            <button data-speed="0.05" class="speed-btn px-2 py-0.5 rounded-lg text-[11px] font-mono-tech font-semibold text-slate-300 hover:text-white cursor-pointer">5%</button>
+            <button data-speed="0.01" class="speed-btn px-2 py-0.5 rounded-lg text-[11px] font-mono-tech font-semibold text-slate-300 hover:text-white cursor-pointer">1%</button>
+          </div>
+
+          <!-- Dyno Mode & Airflow Visualization -->
+          <div class="flex items-center gap-1.5">
+            <button id="btn-dyno" class="px-2.5 py-1.5 rounded-xl text-[11px] font-semibold bg-slate-800/80 text-slate-300 border border-slate-700 hover:bg-slate-700 transition cursor-pointer" title="鎖定引擎轉速，獨立測試負載對增壓的影響">
+              測試台模式：<span id="label-dyno" class="text-slate-400">關</span>
+            </button>
+            <div class="flex items-center gap-0.5 bg-slate-950/60 p-1 rounded-xl border border-slate-800">
+              <button data-flow="particles" class="flow-btn px-2 py-0.5 rounded-lg text-[11px] font-medium bg-sky-500/25 text-sky-200 border border-sky-400/30 cursor-pointer">粒子</button>
+              <button data-flow="streamlines" class="flow-btn px-2 py-0.5 rounded-lg text-[11px] font-medium text-slate-300 hover:text-white cursor-pointer">流線</button>
+              <button data-flow="off" class="flow-btn px-2 py-0.5 rounded-lg text-[11px] font-medium text-slate-300 hover:text-white cursor-pointer">關閉</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Row 2: Target RPM Slider, Load Slider + Quick Throttle Snap Buttons, and 0-720° Crank Angle Scrubber -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-2.5 items-center pt-0.5">
+          <!-- Target RPM -->
+          <div class="bg-slate-950/50 rounded-xl px-3 py-1.5 border border-slate-800/80">
+            <div class="flex justify-between items-center text-[11px] mb-1">
+              <span class="text-slate-300 font-medium">目標轉速 (Target RPM)</span>
+              <span id="val-target-rpm" class="font-mono-tech font-bold text-sky-300">1,800 RPM</span>
+            </div>
+            <input id="sl-target-rpm" type="range" min="800" max="7500" step="50" value="1800" class="tech-slider" />
+          </div>
+
+          <!-- Engine Load / Throttle -->
+          <div class="bg-slate-950/50 rounded-xl px-3 py-1.5 border border-slate-800/80">
+            <div class="flex justify-between items-center text-[11px] mb-1">
+              <span class="text-slate-300 font-medium">負載 / 油門開度</span>
+              <div class="flex items-center gap-1">
+                <button data-load="0" class="load-quick px-1.5 py-0.2 rounded bg-slate-800 hover:bg-slate-700 text-[10px] text-slate-300 cursor-pointer">收油 0%</button>
+                <button data-load="100" class="load-quick px-1.5 py-0.2 rounded bg-amber-500/20 hover:bg-amber-500/30 text-[10px] text-amber-300 border border-amber-400/30 cursor-pointer">全油門 100%</button>
+                <span id="val-load" class="font-mono-tech font-bold text-amber-300 ml-1">35%</span>
+              </div>
+            </div>
+            <input id="sl-load" type="range" min="0" max="100" step="1" value="35" class="tech-slider amber-thumb" />
+          </div>
+
+          <!-- 0-720° Crankshaft Scrubber & Single Step -->
+          <div class="hidden md:block bg-slate-950/50 rounded-xl px-3 py-1.5 border border-slate-800/80">
+            <div class="flex justify-between items-center text-[11px] mb-1">
+              <span class="text-slate-300 font-medium">曲軸角度 (720°)</span>
+              <div class="flex items-center gap-1">
+                <button data-step="-15" class="step-btn px-1 rounded bg-slate-800 hover:bg-slate-700 font-mono-tech text-[10px] text-slate-300 cursor-pointer">-15°</button>
+                <button data-step="-1" class="step-btn px-1 rounded bg-slate-800 hover:bg-slate-700 font-mono-tech text-[10px] text-slate-200 cursor-pointer">-1°</button>
+                <button data-step="1" class="step-btn px-1 rounded bg-slate-800 hover:bg-slate-700 font-mono-tech text-[10px] text-slate-200 cursor-pointer">+1°</button>
+                <button data-step="15" class="step-btn px-1 rounded bg-slate-800 hover:bg-slate-700 font-mono-tech text-[10px] text-sky-300 cursor-pointer">+15°</button>
+                <span id="val-crank-deg" class="font-mono-tech font-bold text-emerald-300 ml-1 w-11 text-right">0.0°</span>
+              </div>
+            </div>
+            <input id="sl-crank-deg" type="range" min="0" max="720" step="0.5" value="0" class="tech-slider emerald-thumb" />
+          </div>
+        </div>
+      </div>
+
+      <!-- SECTION B: Mobile View Mode, Transparency, Cutaways & Explode Controls -->
+      <div id="dock-sec-views" class="hidden md:hidden flex-col gap-2">
+        <div class="grid grid-cols-3 gap-1 bg-slate-950/70 p-1 rounded-xl border border-slate-800">
+          <button data-mode="solid" class="mode-btn-m py-1 rounded-lg text-[11px] font-semibold bg-sky-500 text-slate-950">完整外殼</button>
+          <button data-mode="transparent" class="mode-btn-m py-1 rounded-lg text-[11px] font-semibold text-slate-300">透明外殼</button>
+          <button data-mode="exploded" class="mode-btn-m py-1 rounded-lg text-[11px] font-semibold text-slate-300">拆解模式</button>
+        </div>
+
+        <div id="m-panel-transparent" class="hidden flex-col gap-2">
+          <div class="grid grid-cols-2 gap-2 text-[10px]">
+            <div>
+              <div class="flex justify-between text-slate-300"><span>汽缸體透明</span><span id="m-val-op-block" class="font-mono-tech text-sky-300">75%</span></div>
+              <input id="m-sl-op-block" type="range" min="0" max="100" value="75" class="tech-slider" />
+            </div>
+            <div>
+              <div class="flex justify-between text-slate-300"><span>汽缸頭透明</span><span id="m-val-op-head" class="font-mono-tech text-sky-300">75%</span></div>
+              <input id="m-sl-op-head" type="range" min="0" max="100" value="75" class="tech-slider" />
+            </div>
+            <div>
+              <div class="flex justify-between text-slate-300"><span>渦輪殼透明</span><span id="m-val-op-turbo" class="font-mono-tech text-sky-300">75%</span></div>
+              <input id="m-sl-op-turbo" type="range" min="0" max="100" value="75" class="tech-slider" />
+            </div>
+            <div>
+              <div class="flex justify-between text-slate-300"><span>管路透明</span><span id="m-val-op-pipe" class="font-mono-tech text-sky-300">70%</span></div>
+              <input id="m-sl-op-pipe" type="range" min="0" max="100" value="70" class="tech-slider" />
+            </div>
+          </div>
+          <div class="grid grid-cols-2 gap-1.5">
+            <button id="m-btn-cyl-cutaway" class="py-1.5 rounded-xl text-[11px] font-semibold border border-slate-700 bg-slate-800/80 text-slate-200">單缸剖面</button>
+            <button id="m-btn-turbo-cutaway" class="py-1.5 rounded-xl text-[11px] font-semibold border border-slate-700 bg-slate-800/80 text-slate-200">單顆渦輪剖面</button>
+          </div>
+        </div>
+
+        <div id="m-panel-exploded" class="hidden flex-col gap-1.5">
+          <div class="flex justify-between text-[11px]">
+            <span class="text-amber-300 font-semibold">拆解程度</span>
+            <span id="m-val-explode-pct" class="font-mono-tech font-bold text-amber-300">0%</span>
+          </div>
+          <input id="m-sl-explode" type="range" min="0" max="100" value="0" class="tech-slider amber-thumb" />
+        </div>
+      </div>
+
+      <!-- SECTION C: Mobile Cylinder Selector & Crank Angle Scrubber -->
+      <div id="dock-sec-timing" class="hidden md:hidden flex-col gap-2">
+        <div class="bg-slate-950/60 rounded-xl px-2.5 py-1.5 border border-slate-800">
+          <div class="flex justify-between items-center text-[11px] mb-1">
+            <span class="text-slate-300">曲軸角度</span>
+            <div class="flex items-center gap-1">
+              <button data-step="-15" class="step-btn px-1 py-0.5 rounded bg-slate-800 font-mono-tech text-[10px]">-15°</button>
+              <button data-step="-1" class="step-btn px-1 py-0.5 rounded bg-slate-800 font-mono-tech text-[10px]">-1°</button>
+              <button data-step="1" class="step-btn px-1 py-0.5 rounded bg-slate-800 font-mono-tech text-[10px]">+1°</button>
+              <button data-step="15" class="step-btn px-1 py-0.5 rounded bg-slate-800 font-mono-tech text-[10px] text-sky-300">+15°</button>
+              <span id="m-val-crank-deg" class="font-mono-tech font-bold text-emerald-300 ml-1">0.0°</span>
+            </div>
+          </div>
+          <input id="m-sl-crank-deg" type="range" min="0" max="720" step="0.5" value="0" class="tech-slider emerald-thumb" />
+        </div>
+
+        <div class="grid grid-cols-8 gap-1" id="m-cyl-selector-grid"></div>
+        <div class="flex items-center justify-between text-[11px] bg-slate-950/70 rounded-xl px-2.5 py-1.5 border border-slate-800">
+          <span id="m-cyl-card-title" class="font-bold text-white">第 1 缸 (A列)</span>
+          <span id="m-cyl-stroke-badge" class="px-2 py-0.5 rounded text-[10px] font-bold bg-orange-500/20 text-orange-300">作功</span>
+          <span id="m-cyl-local-deg" class="font-mono-tech text-slate-300">0°</span>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Verification & Quick-Scenario Modal -->
+  <div id="guide-modal" class="hidden fixed inset-0 z-40 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+    <div class="hud-glass max-w-lg w-full rounded-2xl p-5 border border-slate-700/80 shadow-2xl space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <div>
+          <h2 class="text-base font-bold text-white">互動操作與四項工程驗證快捷鍵</h2>
+          <p class="text-xs text-slate-400">一鍵切換測試情境，立即驗證機械相位、增壓物理、進排氣與拆解復位</p>
+        </div>
+        <button id="btn-close-guide" class="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center cursor-pointer">✕</button>
+      </div>
+
+      <div class="space-y-2.5 text-xs">
+        <button data-verify="firing" class="verify-scenario-btn w-full text-left p-3 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 transition cursor-pointer">
+          <div class="font-bold text-sky-300 mb-0.5">1. 八缸相位與四行程同步（1% 慢動作 + 單缸剖面）</div>
+          <div class="text-slate-300">切換至透明外殼與單缸剖面並以 1% 速度運轉，依序觀察 1→8→7→2→6→5→4→3 點火、火花、汽門彈簧壓縮及活塞上下行。</div>
+        </button>
+
+        <button data-verify="boost" class="verify-scenario-btn w-full text-left p-3 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 transition cursor-pointer">
+          <div class="font-bold text-amber-300 mb-0.5">2. 測試台高負載增壓建立與旁通閥開啟</div>
+          <div class="text-slate-300">鎖定引擎 4,500 RPM 並拉高至 100% 全負載，觀察雙渦輪轉速攀升、歧管達到 ~1.25 bar 後旁通閥自動開啟分流；接著點擊「收油 0%」觀察壓力驟降與葉輪慣性減速。</div>
+        </button>
+
+        <button data-verify="turbo" class="verify-scenario-btn w-full text-left p-3 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 transition cursor-pointer">
+          <div class="font-bold text-emerald-300 mb-0.5">3. 渦輪剖面與進排氣雙色流向追蹤</div>
+          <div class="text-slate-300">特寫渦輪剖面，對照進氣側藍色冷空氣壓縮與排氣側橘紅色廢氣推動渦輪葉輪及旁通分流路徑。</div>
+        </button>
+
+        <button data-verify="explode" class="verify-scenario-btn w-full text-left p-3 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 transition cursor-pointer">
+          <div class="font-bold text-purple-300 mb-0.5">4. 高增壓狀態下拆解與平順復位</div>
+          <div class="text-slate-300">在增壓運轉中切入拆解模式展開 85%，確認不穿插；再切回「完整外殼」或「透明外殼」，觀察零件先組裝復位再從原先角度與增壓狀態接續運轉。</div>
+        </button>
+      </div>
+
+      <div class="text-[11px] text-slate-400 pt-1 border-t border-slate-800 flex justify-between">
+        <span>滑鼠左鍵/單指：旋轉 · 右鍵/雙指：平移 · 滾輪/雙指縮放</span>
+        <button id="btn-close-guide-2" class="text-sky-300 font-semibold hover:underline cursor-pointer">開始操作</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+    // =========================================================================
+    // 1. ENGINE CONSTANTS & EXACT 90° V8 CROSS-PLANE KINEMATICS SPECIFICATION
+    // =========================================================================
+    const DEG2RAD = Math.PI / 180;
+    const RAD2DEG = 180 / Math.PI;
+
+    const CRANK_R = 0.44;         // Crank throw radius (stroke = 0.88)
+    const CONROD_L = 1.44;        // Connecting rod center-to-center length
+    const BORE_R = 0.43;          // Cylinder bore radius
+    const DECK_DIST = 2.16;       // Crank center to block deck surface along bore axis
+
+    // Firing order: 1 -> 8 -> 7 -> 2 -> 6 -> 5 -> 4 -> 3 (Cyl 1 Power TDC = 0°)
+    const CRANKPINS = [
+      { index: 0, z:  1.35, deltaDeg: 45,  cylA: 1, cylB: 2 },
+      { index: 1, z:  0.45, deltaDeg: 135, cylA: 3, cylB: 4 },
+      { index: 2, z: -0.45, deltaDeg: 315, cylA: 5, cylB: 6 },
+      { index: 3, z: -1.35, deltaDeg: 225, cylA: 7, cylB: 8 },
+    ];
+
+    const CYLINDER_SPECS = [
+      { id: 1, bank: 'A', bankAlphaDeg:  45, z:  1.47, pinIndex: 0, deltaDeg: 45,  tdcDeg: 0   },
+      { id: 2, bank: 'B', bankAlphaDeg: -45, z:  1.23, pinIndex: 0, deltaDeg: 45,  tdcDeg: 270 },
+      { id: 3, bank: 'A', bankAlphaDeg:  45, z:  0.57, pinIndex: 1, deltaDeg: 135, tdcDeg: 630 },
+      { id: 4, bank: 'B', bankAlphaDeg: -45, z:  0.33, pinIndex: 1, deltaDeg: 135, tdcDeg: 540 },
+      { id: 5, bank: 'A', bankAlphaDeg:  45, z: -0.33, pinIndex: 2, deltaDeg: 315, tdcDeg: 450 },
+      { id: 6, bank: 'B', bankAlphaDeg: -45, z: -0.57, pinIndex: 2, deltaDeg: 315, tdcDeg: 360 },
+      { id: 7, bank: 'A', bankAlphaDeg:  45, z: -1.23, pinIndex: 3, deltaDeg: 225, tdcDeg: 180 },
+      { id: 8, bank: 'B', bankAlphaDeg: -45, z: -1.47, pinIndex: 3, deltaDeg: 225, tdcDeg: 90  },
+    ];
+
+    CYLINDER_SPECS.forEach((c) => {
+      const a = c.bankAlphaDeg * DEG2RAD;
+      c.u = new THREE.Vector3(Math.sin(a), Math.cos(a), 0);
+      c.v = new THREE.Vector3(Math.cos(a), -Math.sin(a), 0);
+    });
+
+    // =========================================================================
+    // 2. SIMULATION STATE & PHYSICS PARAMETERS
+    // =========================================================================
+    const sim = {
+      engineOn: true,
+      playing: true,
+      speedMultiplier: 1.0,
+      dynoMode: false,
+      targetRpm: 1800,
+      engineRpm: 1800,
+      load: 0.35,
+      throttlePos: 0.35,
+      crankAngleDeg: 0,
+
+      turboRpmL: 28000,
+      turboRpmR: 28000,
+      turboAngleL: 0,
+      turboAngleR: 0,
+      boostBar: 0.05,
+      wastegateOpen: 0.0,
+
+      viewMode: 'solid',
+      selectedCylinder: 1,
+      cylCutaway: false,
+      turboCutaway: false,
+      airflowMode: 'particles',
+      qualityTier: 'high',
+      hudCollapsed: false,
+
+      transpBlock: 75,
+      transpHead: 75,
+      transpTurbo: 75,
+      transpPipe: 70,
+
+      explodeCurrent: 0.0,
+      explodeTarget: 0.0,
+      pendingModeAfterReassembly: null,
+      explodedSnapshot: null,
+
+      cylStates: CYLINDER_SPECS.map(() => ({
+        localDeg: 0,
+        strokeName: '作功',
+        strokeEn: 'Power',
+        pistonDisp: 0,
+        pistonDir: '上止點 TDC',
+        intakeLift: 0,
+        exhaustLift: 0,
+        sparkActive: false,
+        combustionGlow: 0,
+      })),
+    };
+
+    // =========================================================================
+    // 3. THREE.JS RENDERER, SCENE, STUDIO LIGHTING & PROCEDURAL ENVIRONMENT
+    // =========================================================================
+    const container = document.getElementById('canvas-container');
+    const renderer = new THREE.WebGLRenderer({
+      antialias: true,
+      powerPreference: 'high-performance',
+      stencil: false,
+    });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.15;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    container.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x0a0d12);
+    scene.fog = new THREE.FogExp2(0x0a0d12, 0.030);
+
+    const camera = new THREE.PerspectiveCamera(38, window.innerWidth / window.innerHeight, 0.1, 100);
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.065;
+    controls.minDistance = 2.0;
+    controls.maxDistance = 18.0;
+    controls.maxPolarAngle = Math.PI * 0.88;
+
+    const CAMERA_PRESETS = {
+      default: { pos: new THREE.Vector3(5.6, 3.8, 6.2), target: new THREE.Vector3(0.0, 1.05, 0.35) },
+      crank:   { pos: new THREE.Vector3(2.5, 0.45, 3.4), target: new THREE.Vector3(0.0, 0.15, 0.25) },
+      valves:  { pos: new THREE.Vector3(2.35, 3.15, 2.55), target: new THREE.Vector3(1.15, 1.85, 1.35) },
+      timing:  { pos: new THREE.Vector3(1.85, 2.15, 5.35), target: new THREE.Vector3(0.0, 1.25, 2.05) },
+      turbo:   { pos: new THREE.Vector3(4.35, 1.55, 2.25), target: new THREE.Vector3(2.35, 1.05, 0.65) },
+      airflow: { pos: new THREE.Vector3(0.4, 6.6, 6.8), target: new THREE.Vector3(0.0, 1.1, 0.5) },
+    };
+
+    camera.position.copy(CAMERA_PRESETS.default.pos);
+    controls.target.copy(CAMERA_PRESETS.default.target);
+    controls.update();
+
+    let cameraTransition = null;
+    function flyCameraTo(presetKey) {
+      const p = CAMERA_PRESETS[presetKey] || CAMERA_PRESETS.default;
+      const target = p.target.clone();
+      const pos = p.pos.clone();
+      if (presetKey === 'valves') {
+        const c = CYLINDER_SPECS[sim.selectedCylinder - 1];
+        const signX = c.bank === 'A' ? 1 : -1;
+        target.set(signX * 1.18, 1.82, c.z);
+        pos.set(signX * 2.45, 3.15, c.z + 1.15);
+      }
+      cameraTransition = {
+        startPos: camera.position.clone(),
+        endPos: pos,
+        startTarget: controls.target.clone(),
+        endTarget: target,
+        progress: 0,
+      };
+    }
+
+    function buildStudioEnvironment() {
+      const pmrem = new THREE.PMREMGenerator(renderer);
+      const envScene = new THREE.Scene();
+      envScene.background = new THREE.Color(0x0d121a);
+
+      const topPanel = new THREE.Mesh(
+        new THREE.PlaneGeometry(14, 14),
+        new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide })
+      );
+      topPanel.position.set(0, 8, 0);
+      topPanel.rotation.x = Math.PI / 2;
+      envScene.add(topPanel);
+
+      const coolPanel = new THREE.Mesh(
+        new THREE.PlaneGeometry(10, 6),
+        new THREE.MeshBasicMaterial({ color: 0x7dd3fc, side: THREE.DoubleSide })
+      );
+      coolPanel.position.set(-8, 3, -4);
+      coolPanel.lookAt(0, 0, 0);
+      envScene.add(coolPanel);
+
+      const warmPanel = new THREE.Mesh(
+        new THREE.PlaneGeometry(10, 6),
+        new THREE.MeshBasicMaterial({ color: 0xfde68a, side: THREE.DoubleSide })
+      );
+      warmPanel.position.set(8, 3, 5);
+      warmPanel.lookAt(0, 0, 0);
+      envScene.add(warmPanel);
+
+      const envRT = pmrem.fromScene(envScene, 0.04);
+      scene.environment = envRT.texture;
+      pmrem.dispose();
+    }
+    buildStudioEnvironment();
+
+    const hemiLight = new THREE.HemisphereLight(0xdbeafe, 0x1e293b, 0.65);
+    scene.add(hemiLight);
+
+    const keyLight = new THREE.DirectionalLight(0xfff7ed, 2.35);
+    keyLight.position.set(6.5, 9.5, 7.0);
+    keyLight.castShadow = true;
+    keyLight.shadow.mapSize.set(2048, 2048);
+    keyLight.shadow.camera.near = 1;
+    keyLight.shadow.camera.far = 26;
+    const d = 5.5;
+    keyLight.shadow.camera.left = -d;
+    keyLight.shadow.camera.right = d;
+    keyLight.shadow.camera.top = d;
+    keyLight.shadow.camera.bottom = -d;
+    keyLight.shadow.bias = -0.0005;
+    scene.add(keyLight);
+
+    const coolRimLight = new THREE.DirectionalLight(0x38bdf8, 1.35);
+    coolRimLight.position.set(-7.5, 4.5, -6.0);
+    scene.add(coolRimLight);
+
+    const warmRimLight = new THREE.DirectionalLight(0xfb923c, 0.95);
+    warmRimLight.position.set(6.0, 2.2, -5.5);
+    scene.add(warmRimLight);
+
+    const floorGroup = new THREE.Group();
+    const floorDisk = new THREE.Mesh(
+      new THREE.CylinderGeometry(7.2, 7.5, 0.12, 64),
+      new THREE.MeshStandardMaterial({
+        color: 0x111621,
+        roughness: 0.72,
+        metalness: 0.25,
+      })
+    );
+    floorDisk.position.y = -1.95;
+    floorDisk.receiveShadow = true;
+    floorGroup.add(floorDisk);
+
+    const gridHelper = new THREE.PolarGridHelper(7.0, 16, 8, 64, 0x1e293b, 0x162032);
+    gridHelper.position.y = -1.885;
+    floorGroup.add(gridHelper);
+    scene.add(floorGroup);
+
+    // =========================================================================
+    // 4. PROCEDURAL HIGH-RES PBR TEXTURES & INDUSTRIAL MATERIALS
+    // =========================================================================
+    function createCanvasTexture(size, drawFn, repeatX = 1, repeatY = 1) {
+      const cvs = document.createElement('canvas');
+      cvs.width = size;
+      cvs.height = size;
+      const ctx = cvs.getContext('2d');
+      drawFn(ctx, size);
+      const tex = new THREE.CanvasTexture(cvs);
+      tex.wrapS = THREE.RepeatWrapping;
+      tex.wrapT = THREE.RepeatWrapping;
+      tex.repeat.set(repeatX, repeatY);
+      tex.anisotropy = 8;
+      return tex;
+    }
+
+    const castAlumBump = createCanvasTexture(512, (ctx, s) => {
+      ctx.fillStyle = '#808080';
+      ctx.fillRect(0, 0, s, s);
+      const imgData = ctx.getImageData(0, 0, s, s);
+      const data = imgData.data;
+      for (let i = 0; i < data.length; i += 4) {
+        const n = 112 + (Math.random() * 32 - 16);
+        data[i] = data[i + 1] = data[i + 2] = n;
+        data[i + 3] = 255;
+      }
+      ctx.putImageData(imgData, 0, 0);
+    }, 4, 4);
+
+    const brushedSteelBump = createCanvasTexture(512, (ctx, s) => {
+      ctx.fillStyle = '#808080';
+      ctx.fillRect(0, 0, s, s);
+      for (let y = 0; y < s; y++) {
+        const v = 118 + Math.floor(Math.random() * 22);
+        ctx.fillStyle = `rgb(${v},${v},${v})`;
+        ctx.fillRect(0, y, s, 1);
+      }
+    }, 2, 2);
+
+    const heatExhaustTex = createCanvasTexture(512, (ctx, s) => {
+      const grad = ctx.createLinearGradient(0, 0, s, 0);
+      grad.addColorStop(0.00, '#c8a878');
+      grad.addColorStop(0.28, '#b58456');
+      grad.addColorStop(0.50, '#7c6f9c');
+      grad.addColorStop(0.72, '#9e7652');
+      grad.addColorStop(1.00, '#c8a878');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, s, s);
+
+      for (let y = 32; y < s; y += 96) {
+        for (let x = 0; x < s; x += 6) {
+          ctx.fillStyle = (x % 12 === 0) ? 'rgba(255,245,220,0.32)' : 'rgba(40,25,20,0.28)';
+          ctx.beginPath();
+          ctx.arc(x, y, 4, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    }, 1, 3);
+    heatExhaustTex.colorSpace = THREE.SRGBColorSpace;
+
+    const MAT = {
+      blockCast: new THREE.MeshStandardMaterial({
+        color: 0x8e99a8,
+        roughness: 0.56,
+        metalness: 0.76,
+        bumpMap: castAlumBump,
+        bumpScale: 0.008,
+      }),
+      headCast: new THREE.MeshStandardMaterial({
+        color: 0xa2adbc,
+        roughness: 0.48,
+        metalness: 0.82,
+        bumpMap: castAlumBump,
+        bumpScale: 0.006,
+      }),
+      valveCover: new THREE.MeshStandardMaterial({
+        color: 0x262d38,
+        roughness: 0.46,
+        metalness: 0.72,
+        bumpMap: castAlumBump,
+        bumpScale: 0.005,
+      }),
+      turboCompHousing: new THREE.MeshStandardMaterial({
+        color: 0xb8c2cf,
+        roughness: 0.36,
+        metalness: 0.88,
+        bumpMap: castAlumBump,
+        bumpScale: 0.004,
+      }),
+      turboTurbineHousing: new THREE.MeshStandardMaterial({
+        map: heatExhaustTex,
+        color: 0xc2936b,
+        roughness: 0.44,
+        metalness: 0.84,
+        bumpMap: castAlumBump,
+        bumpScale: 0.007,
+      }),
+      intakePlenum: new THREE.MeshStandardMaterial({
+        color: 0x9aa5b4,
+        roughness: 0.42,
+        metalness: 0.84,
+        bumpMap: castAlumBump,
+        bumpScale: 0.005,
+      }),
+      chargePipe: new THREE.MeshStandardMaterial({
+        color: 0xcbd5e1,
+        roughness: 0.24,
+        metalness: 0.92,
+      }),
+      exhaustHeader: new THREE.MeshStandardMaterial({
+        map: heatExhaustTex,
+        color: 0xdcb992,
+        roughness: 0.32,
+        metalness: 0.90,
+      }),
+      crankMachined: new THREE.MeshStandardMaterial({
+        color: 0xd4dce6,
+        roughness: 0.20,
+        metalness: 0.95,
+        bumpMap: brushedSteelBump,
+        bumpScale: 0.003,
+      }),
+      crankWebDark: new THREE.MeshStandardMaterial({
+        color: 0x475569,
+        roughness: 0.45,
+        metalness: 0.85,
+        bumpMap: castAlumBump,
+        bumpScale: 0.006,
+      }),
+      forgedRod: new THREE.MeshStandardMaterial({
+        color: 0x94a3b8,
+        roughness: 0.28,
+        metalness: 0.92,
+        bumpMap: brushedSteelBump,
+        bumpScale: 0.003,
+      }),
+      pistonAlum: new THREE.MeshStandardMaterial({
+        color: 0xe2e8f0,
+        roughness: 0.22,
+        metalness: 0.94,
+        bumpMap: brushedSteelBump,
+        bumpScale: 0.002,
+      }),
+      pistonRing: new THREE.MeshStandardMaterial({
+        color: 0x1e293b,
+        roughness: 0.35,
+        metalness: 0.85,
+      }),
+      linerSteel: new THREE.MeshStandardMaterial({
+        color: 0x64748b,
+        roughness: 0.18,
+        metalness: 0.95,
+        side: THREE.DoubleSide,
+      }),
+      valvePolished: new THREE.MeshStandardMaterial({
+        color: 0xf8fafc,
+        roughness: 0.14,
+        metalness: 0.96,
+      }),
+      springSteel: new THREE.MeshStandardMaterial({
+        color: 0x475569,
+        roughness: 0.30,
+        metalness: 0.90,
+      }),
+      camShaftSteel: new THREE.MeshStandardMaterial({
+        color: 0xcbd5e1,
+        roughness: 0.22,
+        metalness: 0.94,
+      }),
+      billetWheel: new THREE.MeshStandardMaterial({
+        color: 0xe2e8f0,
+        roughness: 0.18,
+        metalness: 0.96,
+      }),
+      inconelWheel: new THREE.MeshStandardMaterial({
+        color: 0xb47b4e,
+        roughness: 0.28,
+        metalness: 0.92,
+      }),
+      chraIron: new THREE.MeshStandardMaterial({
+        color: 0x334155,
+        roughness: 0.52,
+        metalness: 0.80,
+      }),
+      goldAnodized: new THREE.MeshStandardMaterial({
+        color: 0xd97706,
+        roughness: 0.28,
+        metalness: 0.88,
+      }),
+      siliconeBlue: new THREE.MeshStandardMaterial({
+        color: 0x0284c7,
+        roughness: 0.44,
+        metalness: 0.08,
+      }),
+      coilRed: new THREE.MeshStandardMaterial({
+        color: 0xdc2626,
+        roughness: 0.38,
+        metalness: 0.20,
+      }),
+      ceramicWhite: new THREE.MeshStandardMaterial({
+        color: 0xf8fafc,
+        roughness: 0.20,
+        metalness: 0.05,
+      }),
+      boltChrome: new THREE.MeshStandardMaterial({
+        color: 0xe2e8f0,
+        roughness: 0.22,
+        metalness: 0.95,
+      }),
+      cutFaceRed: new THREE.MeshStandardMaterial({
+        color: 0xb91c1c,
+        roughness: 0.35,
+        metalness: 0.55,
+        side: THREE.DoubleSide,
+      }),
+    };
+
+    const HOUSING_MAT_GROUPS = {
+      block: [MAT.blockCast],
+      head: [MAT.headCast, MAT.valveCover],
+      turbo: [MAT.turboCompHousing, MAT.turboTurbineHousing],
+      pipe: [MAT.intakePlenum, MAT.chargePipe, MAT.exhaustHeader],
+    };
+
+    function applyHousingTransparency() {
+      const active = sim.viewMode === 'transparent';
+      const settings = [
+        { list: HOUSING_MAT_GROUPS.block, pct: active ? sim.transpBlock : 0 },
+        { list: HOUSING_MAT_GROUPS.head,  pct: active ? sim.transpHead  : 0 },
+        { list: HOUSING_MAT_GROUPS.turbo, pct: active ? sim.transpTurbo : 0 },
+        { list: HOUSING_MAT_GROUPS.pipe,  pct: active ? sim.transpPipe  : 0 },
+      ];
+      settings.forEach(({ list, pct }) => {
+        const opacity = THREE.MathUtils.clamp(1 - pct / 100, 0.06, 1.0);
+        const isTransp = opacity < 0.995;
+        list.forEach((m) => {
+          m.opacity = opacity;
+          m.transparent = isTransp;
+          m.depthWrite = !isTransp;
+          m.side = isTransp ? THREE.DoubleSide : THREE.FrontSide;
+          m.needsUpdate = true;
+        });
+      });
+    }
+
+    // =========================================================================
+    // 5. BUILD COMPLETE 3D TWIN-TURBO V8 ENGINE ASSEMBLY
+    // =========================================================================
+    const engineRoot = new THREE.Group();
+    scene.add(engineRoot);
+
+    const explodableParts = [];
+    function registerExplodable(obj, offsetVec, startStage = 0.0, endStage = 1.0) {
+      explodableParts.push({
+        obj,
+        basePos: obj.position.clone(),
+        offset: offsetVec.clone(),
+        startStage,
+        endStage,
+      });
+    }
+
+    function createBoltedFlange(radius, thickness, boltCount, matFlange, matBolt) {
+      const grp = new THREE.Group();
+      const disc = new THREE.Mesh(
+        new THREE.CylinderGeometry(radius, radius, thickness, 24),
+        matFlange
+      );
+      disc.rotation.x = Math.PI / 2;
+      grp.add(disc);
+      const boltGeo = new THREE.CylinderGeometry(0.022, 0.022, thickness + 0.03, 6);
+      for (let i = 0; i < boltCount; i++) {
+        const a = (i / boltCount) * Math.PI * 2;
+        const b = new THREE.Mesh(boltGeo, matBolt);
+        b.rotation.x = Math.PI / 2;
+        b.position.set(Math.cos(a) * (radius * 0.76), Math.sin(a) * (radius * 0.76), 0);
+        grp.add(b);
+      }
+      return grp;
+    }
+
+    function createToothedSprocket(pitchRadius, toothCount, thickness, matBody, matTeeth) {
+      const grp = new THREE.Group();
+      const rootR = pitchRadius - 0.028;
+      const tipR = pitchRadius + 0.026;
+
+      const shape = new THREE.Shape();
+      const step = (Math.PI * 2) / toothCount;
+      for (let i = 0; i < toothCount; i++) {
+        const a0 = i * step;
+        const a1 = a0 + step * 0.22;
+        const a2 = a0 + step * 0.36;
+        const a3 = a0 + step * 0.64;
+        const a4 = a0 + step * 0.78;
+        if (i === 0) shape.moveTo(Math.cos(a0) * rootR, Math.sin(a0) * rootR);
+        else shape.lineTo(Math.cos(a0) * rootR, Math.sin(a0) * rootR);
+        shape.lineTo(Math.cos(a1) * rootR, Math.sin(a1) * rootR);
+        shape.lineTo(Math.cos(a2) * tipR, Math.sin(a2) * tipR);
+        shape.lineTo(Math.cos(a3) * tipR, Math.sin(a3) * tipR);
+        shape.lineTo(Math.cos(a4) * rootR, Math.sin(a4) * rootR);
+      }
+      shape.closePath();
+
+      if (pitchRadius > 0.35) {
+        const holeCount = 5;
+        for (let h = 0; h < holeCount; h++) {
+          const ha = (h / holeCount) * Math.PI * 2;
+          const hole = new THREE.Path();
+          hole.absarc(
+            Math.cos(ha) * (pitchRadius * 0.56),
+            Math.sin(ha) * (pitchRadius * 0.56),
+            pitchRadius * 0.16,
+            0,
+            Math.PI * 2,
+            true
+          );
+          shape.holes.push(hole);
+        }
+      }
+
+      const gearGeo = new THREE.ExtrudeGeometry(shape, {
+        depth: thickness,
+        bevelEnabled: true,
+        bevelThickness: 0.008,
+        bevelSize: 0.006,
+        bevelSegments: 2,
+      });
+      gearGeo.center();
+      const gearMesh = new THREE.Mesh(gearGeo, matTeeth);
+      gearMesh.castShadow = true;
+      grp.add(gearMesh);
+
+      const hub = new THREE.Mesh(
+        new THREE.CylinderGeometry(pitchRadius * 0.28, pitchRadius * 0.28, thickness + 0.04, 20),
+        matBody
+      );
+      hub.rotation.x = Math.PI / 2;
+      grp.add(hub);
+
+      const bolt = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.042, 0.042, thickness + 0.07, 6),
+        MAT.goldAnodized
+      );
+      bolt.rotation.x = Math.PI / 2;
+      grp.add(bolt);
+
+      return grp;
+    }
+
+    // -------------------------------------------------------------------------
+    // 5A. CROSS-PLANE CRANKSHAFT, COUNTERWEIGHTS, SPROCKET & FLYWHEEL
+    // -------------------------------------------------------------------------
+    const crankAssemblyGroup = new THREE.Group();
+    engineRoot.add(crankAssemblyGroup);
+    registerExplodable(crankAssemblyGroup, new THREE.Vector3(0, -1.15, 0), 0.35, 1.0);
+
+    const crankRotatingGroup = new THREE.Group();
+    crankAssemblyGroup.add(crankRotatingGroup);
+
+    const mainZ = [1.80, 0.90, 0.0, -0.90, -1.80];
+    mainZ.forEach((zPos, idx) => {
+      const len = (idx === 0 || idx === 4) ? 0.34 : 0.24;
+      const journal = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.24, 0.24, len, 28),
+        MAT.crankMachined
+      );
+      journal.rotation.x = Math.PI / 2;
+      journal.position.z = zPos;
+      journal.castShadow = true;
+      crankRotatingGroup.add(journal);
+    });
+
+    // Compact beveled counterweight profile (max swept radius <= 0.66 < 0.88 V-valley deck & 0.94 liner bottom)
+    const cheekShape = new THREE.Shape();
+    cheekShape.moveTo(-0.17, -0.06);
+    cheekShape.absarc(0, -0.04, 0.62, Math.PI * 1.18, Math.PI * 1.82, false);
+    cheekShape.lineTo(0.20, 0.48);
+    cheekShape.absarc(0, 0.44, 0.20, 0, Math.PI, false);
+    cheekShape.closePath();
+
+    const cheekGeo = new THREE.ExtrudeGeometry(cheekShape, {
+      depth: 0.13,
+      bevelEnabled: true,
+      bevelThickness: 0.018,
+      bevelSize: 0.018,
+      bevelSegments: 2,
+    });
+    cheekGeo.center();
+
+    CRANKPINS.forEach((pin) => {
+      const throwGroup = new THREE.Group();
+      throwGroup.position.z = pin.z;
+      throwGroup.rotation.z = -pin.deltaDeg * DEG2RAD;
+      crankRotatingGroup.add(throwGroup);
+
+      const pinJournal = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.185, 0.185, 0.48, 28),
+        MAT.crankMachined
+      );
+      pinJournal.rotation.x = Math.PI / 2;
+      pinJournal.position.y = CRANK_R;
+      pinJournal.castShadow = true;
+      throwGroup.add(pinJournal);
+
+      [-0.29, 0.29].forEach((zOff) => {
+        const cheek = new THREE.Mesh(cheekGeo, MAT.crankWebDark);
+        cheek.position.z = zOff;
+        cheek.castShadow = true;
+        throwGroup.add(cheek);
+      });
+    });
+
+    const flywheelGroup = new THREE.Group();
+    flywheelGroup.position.z = -2.06;
+    const flywheelDisc = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.96, 0.96, 0.11, 48),
+      MAT.crankWebDark
+    );
+    flywheelDisc.rotation.x = Math.PI / 2;
+    flywheelDisc.castShadow = true;
+    flywheelGroup.add(flywheelDisc);
+
+    const ringGear = new THREE.Mesh(
+      new THREE.TorusGeometry(0.96, 0.032, 10, 64),
+      MAT.crankMachined
+    );
+    flywheelGroup.add(ringGear);
+
+    const clutchFace = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.74, 0.74, 0.125, 36),
+      MAT.crankMachined
+    );
+    clutchFace.rotation.x = Math.PI / 2;
+    flywheelGroup.add(clutchFace);
+    crankRotatingGroup.add(flywheelGroup);
+
+    const CRANK_SPROCKET_R = 0.26;
+    const CAM_SPROCKET_R = 0.52;
+    const IDLER_SPROCKET_R = 0.16;
+
+    const crankSprocket = createToothedSprocket(CRANK_SPROCKET_R, 20, 0.12, MAT.crankWebDark, MAT.crankMachined);
+    crankSprocket.position.z = 2.05;
+    crankRotatingGroup.add(crankSprocket);
+
+    const frontPulley = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.54, 0.54, 0.18, 36),
+      MAT.valveCover
+    );
+    frontPulley.rotation.x = Math.PI / 2;
+    frontPulley.position.z = 2.34;
+    frontPulley.castShadow = true;
+    crankRotatingGroup.add(frontPulley);
+
+    const pulleyHub = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.22, 0.22, 0.22, 24),
+      MAT.goldAnodized
+    );
+    pulleyHub.rotation.x = Math.PI / 2;
+    pulleyHub.position.z = 2.35;
+    crankRotatingGroup.add(pulleyHub);
+
+    // -------------------------------------------------------------------------
+    // 5B. CONNECTING RODS, WRIST PINS & PISTONS (8 CYLINDERS)
+    // -------------------------------------------------------------------------
+    const movingPartsGroup = new THREE.Group();
+    engineRoot.add(movingPartsGroup);
+
+    const pistonMeshes = [];
+    const conrodMeshes = [];
+
+    const rodBeamGeo = new THREE.BoxGeometry(0.11, CONROD_L - 0.34, 0.075);
+    const bigEndGeo = new THREE.CylinderGeometry(0.255, 0.255, 0.215, 24);
+    bigEndGeo.rotateX(Math.PI / 2);
+    const smallEndGeo = new THREE.CylinderGeometry(0.135, 0.135, 0.19, 20);
+    smallEndGeo.rotateX(Math.PI / 2);
+
+    const pistonCrownGeo = new THREE.CylinderGeometry(BORE_R * 0.96, BORE_R * 0.96, 0.24, 32);
+    const pistonSkirtGeo = new THREE.CylinderGeometry(BORE_R * 0.94, BORE_R * 0.92, 0.24, 32, 1, true);
+    const ringGeo = new THREE.TorusGeometry(BORE_R * 0.962, 0.011, 8, 36);
+    ringGeo.rotateX(Math.PI / 2);
+    const wristPinGeo = new THREE.CylinderGeometry(0.088, 0.088, BORE_R * 1.48, 20);
+    wristPinGeo.rotateX(Math.PI / 2);
+
+    CYLINDER_SPECS.forEach((cyl) => {
+      const rodGroup = new THREE.Group();
+      rodGroup.position.z = cyl.z;
+
+      const beam = new THREE.Mesh(rodBeamGeo, MAT.forgedRod);
+      beam.position.y = CONROD_L * 0.5;
+      beam.castShadow = true;
+      rodGroup.add(beam);
+
+      const bigEnd = new THREE.Mesh(bigEndGeo, MAT.forgedRod);
+      bigEnd.castShadow = true;
+      rodGroup.add(bigEnd);
+
+      const smallEnd = new THREE.Mesh(smallEndGeo, MAT.forgedRod);
+      smallEnd.position.y = CONROD_L;
+      rodGroup.add(smallEnd);
+
+      const boltGeo = new THREE.CylinderGeometry(0.022, 0.022, 0.24, 8);
+      [-0.22, 0.22].forEach((bx) => {
+        const rBolt = new THREE.Mesh(boltGeo, MAT.boltChrome);
+        rBolt.position.set(bx, 0.06, 0);
+        rodGroup.add(rBolt);
+      });
+
+      movingPartsGroup.add(rodGroup);
+      conrodMeshes.push(rodGroup);
+
+      const pistonGroup = new THREE.Group();
+      pistonGroup.position.z = cyl.z;
+      pistonGroup.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), cyl.u);
+
+      const crown = new THREE.Mesh(pistonCrownGeo, MAT.pistonAlum);
+      crown.position.y = 0.08;
+      crown.castShadow = true;
+      pistonGroup.add(crown);
+
+      const dome = new THREE.Mesh(
+        new THREE.CylinderGeometry(BORE_R * 0.65, BORE_R * 0.85, 0.04, 24),
+        MAT.pistonAlum
+      );
+      dome.position.y = 0.21;
+      pistonGroup.add(dome);
+
+      const skirt = new THREE.Mesh(pistonSkirtGeo, MAT.pistonAlum);
+      skirt.position.y = -0.14;
+      pistonGroup.add(skirt);
+
+      [0.14, 0.09, 0.04].forEach((ry) => {
+        const ring = new THREE.Mesh(ringGeo, MAT.pistonRing);
+        ring.position.y = ry;
+        pistonGroup.add(ring);
+      });
+
+      const pin = new THREE.Mesh(wristPinGeo, MAT.crankMachined);
+      pistonGroup.add(pin);
+
+      movingPartsGroup.add(pistonGroup);
+      pistonMeshes.push(pistonGroup);
+    });
+
+    // -------------------------------------------------------------------------
+    // 5C. CYLINDER BLOCK, Y-SHAPED TIMING COVER, OIL PAN & SLEEVES
+    // -------------------------------------------------------------------------
+    const blockGroup = new THREE.Group();
+    engineRoot.add(blockGroup);
+
+    // Lower crankcase skirt (y = -0.86 to +0.26)
+    const crankcaseMesh = new THREE.Mesh(
+      new THREE.BoxGeometry(1.78, 1.12, 3.85),
+      MAT.blockCast
+    );
+    crankcaseMesh.position.set(0, -0.30, 0);
+    crankcaseMesh.castShadow = true;
+    crankcaseMesh.receiveShadow = true;
+    blockGroup.add(crankcaseMesh);
+
+    // Raised V-valley floor deck bridging the 90° bank saddle (y = +0.22 to +0.88, above max crank swept radius 0.695)
+    const valleyBlockMesh = new THREE.Mesh(
+      new THREE.BoxGeometry(1.16, 0.66, 3.85),
+      MAT.blockCast
+    );
+    valleyBlockMesh.position.set(0, 0.55, 0);
+    valleyBlockMesh.castShadow = true;
+    valleyBlockMesh.receiveShadow = true;
+    blockGroup.add(valleyBlockMesh);
+
+    for (let z = -1.65; z <= 1.65; z += 0.41) {
+      [-0.91, 0.91].forEach((xSide) => {
+        const rib = new THREE.Mesh(
+          new THREE.BoxGeometry(0.07, 1.06, 0.08),
+          MAT.blockCast
+        );
+        rib.position.set(xSide, -0.30, z);
+        blockGroup.add(rib);
+      });
+    }
+
+    // Contoured Y-shaped cast aluminum front timing cover
+    const timingCoverGroup = new THREE.Group();
+    timingCoverGroup.position.set(0, 0, 2.13);
+    engineRoot.add(timingCoverGroup);
+    registerExplodable(timingCoverGroup, new THREE.Vector3(0, 0, 0.95), 0.15, 0.70);
+
+    const tcShape = new THREE.Shape();
+    tcShape.moveTo(-0.78, -0.78);
+    tcShape.lineTo(0.78, -0.78);
+    tcShape.lineTo(0.84, 0.18);
+    tcShape.lineTo(2.42, 1.78);
+    tcShape.absarc(1.88, 2.22, 0.68, -Math.PI * 0.22, Math.PI * 0.78, false);
+    tcShape.lineTo(0.66, 1.15);
+    tcShape.quadraticCurveTo(0, 0.85, -0.66, 1.15);
+    tcShape.lineTo(-1.38, 2.72);
+    tcShape.absarc(-1.88, 2.22, 0.68, Math.PI * 0.22, Math.PI * 1.22, false);
+    tcShape.lineTo(-0.84, 0.18);
+    tcShape.closePath();
+
+    const crankHole = new THREE.Path();
+    crankHole.absarc(0, 0, 0.24, 0, Math.PI * 2, true);
+    tcShape.holes.push(crankHole);
+
+    const tcGeo = new THREE.ExtrudeGeometry(tcShape, {
+      depth: 0.11,
+      bevelEnabled: true,
+      bevelThickness: 0.015,
+      bevelSize: 0.015,
+      bevelSegments: 2,
+    });
+    tcGeo.center();
+    const timingCoverMesh = new THREE.Mesh(tcGeo, MAT.blockCast);
+    timingCoverMesh.castShadow = true;
+    timingCoverMesh.receiveShadow = true;
+    timingCoverGroup.add(timingCoverMesh);
+
+    const tcSealCollar = new THREE.Mesh(
+      new THREE.TorusGeometry(0.245, 0.025, 10, 32),
+      MAT.chraIron
+    );
+    tcSealCollar.position.z = 0.06;
+    timingCoverGroup.add(tcSealCollar);
+
+    [
+      [-0.70, -0.65], [0.70, -0.65], [-0.74, 0.15], [0.74, 0.15],
+      [-1.32, 1.65], [1.32, 1.65], [-2.35, 2.15], [2.35, 2.15],
+      [-1.88, 2.82], [1.88, 2.82], [-0.55, 1.05], [0.55, 1.05],
+    ].forEach(([bx, by]) => {
+      const bolt = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.024, 0.024, 0.04, 6),
+        MAT.boltChrome
+      );
+      bolt.rotation.x = Math.PI / 2;
+      bolt.position.set(bx, by, 0.072);
+      timingCoverGroup.add(bolt);
+    });
+
+    const oilPanGroup = new THREE.Group();
+    oilPanGroup.position.set(0, -1.16, 0);
+    engineRoot.add(oilPanGroup);
+    registerExplodable(oilPanGroup, new THREE.Vector3(0, -1.55, 0), 0.25, 0.90);
+
+    const panUpper = new THREE.Mesh(
+      new THREE.BoxGeometry(1.86, 0.56, 3.88),
+      MAT.valveCover
+    );
+    panUpper.castShadow = true;
+    oilPanGroup.add(panUpper);
+
+    const panSump = new THREE.Mesh(
+      new THREE.BoxGeometry(1.42, 0.34, 2.25),
+      MAT.valveCover
+    );
+    panSump.position.set(0, -0.42, -0.55);
+    panSump.castShadow = true;
+    oilPanGroup.add(panSump);
+
+    for (let x = -0.55; x <= 0.55; x += 0.22) {
+      const fin = new THREE.Mesh(
+        new THREE.BoxGeometry(0.035, 0.08, 2.18),
+        MAT.boltChrome
+      );
+      fin.position.set(x, -0.60, -0.55);
+      oilPanGroup.add(fin);
+    }
+
+    const cylinderCutawayMeshes = [];
+    const cylinderNormalMeshes = [];
+
+    CYLINDER_SPECS.forEach((cyl) => {
+      const bankSign = cyl.bank === 'A' ? 1 : -1;
+      const boreHolder = new THREE.Group();
+      boreHolder.position.set(0, 0, cyl.z);
+      boreHolder.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), cyl.u);
+      blockGroup.add(boreHolder);
+
+      // Liner bottom raised to 0.94 so rotating counterweights & big-ends have full mechanical clearance
+      const boreStart = 0.94;
+      const boreHeight = DECK_DIST - boreStart;
+      const boreMidY = boreStart + boreHeight * 0.5;
+
+      const linerFull = new THREE.Mesh(
+        new THREE.CylinderGeometry(BORE_R, BORE_R, boreHeight, 32, 1, true),
+        MAT.linerSteel
+      );
+      linerFull.position.y = boreMidY;
+      boreHolder.add(linerFull);
+
+      const jacketFull = new THREE.Mesh(
+        new THREE.CylinderGeometry(BORE_R + 0.13, BORE_R + 0.16, boreHeight, 24, 1, true),
+        MAT.blockCast
+      );
+      jacketFull.position.y = boreMidY;
+      jacketFull.castShadow = true;
+      boreHolder.add(jacketFull);
+
+      const thetaStart = bankSign > 0 ? Math.PI * 0.45 : -Math.PI * 0.55;
+      const thetaLen = Math.PI * 1.1;
+
+      const linerCut = new THREE.Mesh(
+        new THREE.CylinderGeometry(BORE_R, BORE_R, boreHeight, 24, 1, true, thetaStart, thetaLen),
+        MAT.linerSteel
+      );
+      linerCut.position.y = boreMidY;
+      linerCut.visible = false;
+      boreHolder.add(linerCut);
+
+      const jacketCut = new THREE.Mesh(
+        new THREE.CylinderGeometry(BORE_R + 0.13, BORE_R + 0.16, boreHeight, 20, 1, true, thetaStart, thetaLen),
+        MAT.blockCast
+      );
+      jacketCut.position.y = boreMidY;
+      jacketCut.visible = false;
+      boreHolder.add(jacketCut);
+
+      const cutWallGeo = new THREE.PlaneGeometry(0.14, boreHeight);
+      const cutWall1 = new THREE.Mesh(cutWallGeo, MAT.cutFaceRed);
+      cutWall1.position.set(
+        Math.sin(thetaStart) * (BORE_R + 0.07),
+        boreMidY,
+        Math.cos(thetaStart) * (BORE_R + 0.07)
+      );
+      cutWall1.rotation.y = thetaStart + Math.PI / 2;
+      cutWall1.visible = false;
+      boreHolder.add(cutWall1);
+
+      const cutWall2 = new THREE.Mesh(cutWallGeo, MAT.cutFaceRed);
+      const endAng = thetaStart + thetaLen;
+      cutWall2.position.set(
+        Math.sin(endAng) * (BORE_R + 0.07),
+        boreMidY,
+        Math.cos(endAng) * (BORE_R + 0.07)
+      );
+      cutWall2.rotation.y = endAng + Math.PI / 2;
+      cutWall2.visible = false;
+      boreHolder.add(cutWall2);
+
+      cylinderNormalMeshes.push([linerFull, jacketFull]);
+      cylinderCutawayMeshes.push([linerCut, jacketCut, cutWall1, cutWall2]);
+    });
+
+    // -------------------------------------------------------------------------
+    // 5D. DOHC 32-VALVE CYLINDER HEADS, CAMSHAFTS, VALVES, SPRINGS & SPARK PLUGS
+    // -------------------------------------------------------------------------
+    const bankGroups = { A: new THREE.Group(), B: new THREE.Group() };
+    const valveCoverGroups = { A: new THREE.Group(), B: new THREE.Group() };
+
+    ['A', 'B'].forEach((bankKey) => {
+      const sign = bankKey === 'A' ? 1 : -1;
+      const alpha = sign * 45 * DEG2RAD;
+      const headGroup = bankGroups[bankKey];
+      headGroup.quaternion.setFromAxisAngle(new THREE.Vector3(0, 0, 1), -alpha);
+      engineRoot.add(headGroup);
+
+      registerExplodable(headGroup, new THREE.Vector3(sign * 1.35, 1.35, 0), 0.15, 0.85);
+
+      const headCast = new THREE.Mesh(
+        new THREE.BoxGeometry(1.36, 0.84, 3.86),
+        MAT.headCast
+      );
+      headCast.position.set(0, DECK_DIST + 0.42, 0);
+      headCast.castShadow = true;
+      headCast.receiveShadow = true;
+      headGroup.add(headCast);
+
+      for (let z = -1.75; z <= 1.75; z += 0.50) {
+        [-0.58, 0.58].forEach((bx) => {
+          const boss = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.055, 0.055, 0.88, 12),
+            MAT.headCast
+          );
+          boss.position.set(bx, DECK_DIST + 0.44, z);
+          headGroup.add(boss);
+
+          const stud = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.032, 0.032, 0.06, 6),
+            MAT.boltChrome
+          );
+          stud.position.set(bx, DECK_DIST + 0.90, z);
+          headGroup.add(stud);
+        });
+      }
+
+      const vcGroup = valveCoverGroups[bankKey];
+      vcGroup.position.set(0, DECK_DIST + 0.98, 0);
+      headGroup.add(vcGroup);
+      registerExplodable(vcGroup, new THREE.Vector3(0, 0.95, 0), 0.0, 0.55);
+
+      const vcBody = new THREE.Mesh(
+        new THREE.BoxGeometry(1.34, 0.36, 3.84),
+        MAT.valveCover
+      );
+      vcBody.castShadow = true;
+      vcGroup.add(vcBody);
+
+      [-0.36, 0.36].forEach((ridgeX) => {
+        const ridge = new THREE.Mesh(
+          new THREE.BoxGeometry(0.46, 0.14, 3.76),
+          MAT.valveCover
+        );
+        ridge.position.set(ridgeX, 0.22, 0);
+        vcGroup.add(ridge);
+      });
+    });
+
+    const camShaftMeshes = [];
+    const camSprocketMeshes = [];
+    const camSpecs = [
+      { bank: 'A', role: 'intake',  localX: -0.34 },
+      { bank: 'A', role: 'exhaust', localX:  0.34 },
+      { bank: 'B', role: 'intake',  localX:  0.34 },
+      { bank: 'B', role: 'exhaust', localX: -0.34 },
+    ];
+
+    const camCentersWorld = [];
+
+    camSpecs.forEach((cs) => {
+      const bankSign = cs.bank === 'A' ? 1 : -1;
+      const headGroup = bankGroups[cs.bank];
+      const camGroup = new THREE.Group();
+      const camLocalY = DECK_DIST + 0.88;
+      camGroup.position.set(cs.localX, camLocalY, 0);
+      headGroup.add(camGroup);
+
+      const shaft = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.085, 0.085, 4.12, 20),
+        MAT.camShaftSteel
+      );
+      shaft.rotation.x = Math.PI / 2;
+      shaft.castShadow = true;
+      camGroup.add(shaft);
+
+      const sprock = createToothedSprocket(CAM_SPROCKET_R, 40, 0.11, MAT.chraIron, MAT.goldAnodized);
+      sprock.position.z = 2.05;
+      camGroup.add(sprock);
+      camSprocketMeshes.push(sprock);
+
+      const alpha = bankSign * 45 * DEG2RAD;
+      const wx = cs.localX * Math.cos(alpha) + camLocalY * Math.sin(alpha);
+      const wy = -cs.localX * Math.sin(alpha) + camLocalY * Math.cos(alpha);
+      camCentersWorld.push({ bank: cs.bank, role: cs.role, x: wx, y: wy });
+
+      const bankCyls = CYLINDER_SPECS.filter((c) => c.bank === cs.bank);
+      const lobeShape = new THREE.Shape();
+      lobeShape.absarc(0, 0, 0.115, 0, Math.PI, false);
+      lobeShape.lineTo(-0.045, -0.22);
+      lobeShape.absarc(0, -0.22, 0.045, Math.PI, Math.PI * 2, false);
+      lobeShape.closePath();
+      const lobeGeo = new THREE.ExtrudeGeometry(lobeShape, { depth: 0.065, bevelEnabled: false });
+      lobeGeo.center();
+
+      bankCyls.forEach((cyl) => {
+        const peakCrankDeg = cs.role === 'intake'
+          ? (cyl.tdcDeg + 465) % 720
+          : (cyl.tdcDeg + 255) % 720;
+        const lobeAngleRad = (peakCrankDeg * 0.5) * DEG2RAD;
+
+        [-0.14, 0.14].forEach((zOff) => {
+          const lobe = new THREE.Mesh(lobeGeo, MAT.crankMachined);
+          lobe.position.z = cyl.z + zOff;
+          lobe.rotation.z = -lobeAngleRad;
+          camGroup.add(lobe);
+        });
+      });
+
+      camShaftMeshes.push(camGroup);
+    });
+
+    // -------------------------------------------------------------------------
+    // 5D-2. 3D ROLLER TIMING CHAIN & V-VALLEY IDLER SPROCKETS
+    // -------------------------------------------------------------------------
+    const timingDriveGroup = new THREE.Group();
+    engineRoot.add(timingDriveGroup);
+
+    const camA_In  = camCentersWorld.find((c) => c.bank === 'A' && c.role === 'intake');
+    const camA_Ex  = camCentersWorld.find((c) => c.bank === 'A' && c.role === 'exhaust');
+    const camB_In  = camCentersWorld.find((c) => c.bank === 'B' && c.role === 'intake');
+    const camB_Ex  = camCentersWorld.find((c) => c.bank === 'B' && c.role === 'exhaust');
+
+    const idlerA = { x:  0.62, y: 1.08, r: IDLER_SPROCKET_R };
+    const idlerB = { x: -0.62, y: 1.08, r: IDLER_SPROCKET_R };
+    const idlerSprockets = [];
+
+    [idlerA, idlerB].forEach((idl) => {
+      const sp = createToothedSprocket(idl.r, 16, 0.11, MAT.chraIron, MAT.crankMachined);
+      sp.position.set(idl.x, idl.y, 2.05);
+      timingDriveGroup.add(sp);
+      idlerSprockets.push(sp);
+    });
+
+    // Sleek low-profile outer nylon chain guide rails flanking the exterior chain spans
+    [
+      { p0: new THREE.Vector2(0.28, -0.02),  p1: new THREE.Vector2(1.48, 0.92),  p2: new THREE.Vector2(2.44, 2.02) },
+      { p0: new THREE.Vector2(-0.28, -0.02), p1: new THREE.Vector2(-1.48, 0.92), p2: new THREE.Vector2(-2.44, 2.02) },
+    ].forEach((g) => {
+      const qCurve = new THREE.QuadraticBezierCurve3(
+        new THREE.Vector3(g.p0.x, g.p0.y, 2.05),
+        new THREE.Vector3(g.p1.x, g.p1.y, 2.05),
+        new THREE.Vector3(g.p2.x, g.p2.y, 2.05)
+      );
+      const pts = qCurve.getPoints(20);
+      const guideGroup = new THREE.Group();
+      for (let i = 0; i < pts.length - 1; i++) {
+        const a = pts[i];
+        const b = pts[i + 1];
+        const segLen = a.distanceTo(b);
+        const seg = new THREE.Mesh(
+          new THREE.BoxGeometry(0.036, segLen * 1.04, 0.14),
+          MAT.chraIron
+        );
+        seg.position.copy(a).lerp(b, 0.5);
+        const dir = new THREE.Vector3().subVectors(b, a).normalize();
+        seg.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+        guideGroup.add(seg);
+      }
+      [pts[2], pts[pts.length - 3]].forEach((pinPos) => {
+        const pin = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.024, 0.024, 0.18, 12),
+          MAT.boltChrome
+        );
+        pin.rotation.x = Math.PI / 2;
+        pin.position.copy(pinPos);
+        guideGroup.add(pin);
+      });
+      timingDriveGroup.add(guideGroup);
+    });
+
+    function buildExactTimingChainCurve() {
+      const cCrank = { x: 0, y: 0, r: CRANK_SPROCKET_R };
+      const cAEx   = { x: camA_Ex.x, y: camA_Ex.y, r: CAM_SPROCKET_R };
+      const cAIn   = { x: camA_In.x, y: camA_In.y, r: CAM_SPROCKET_R };
+      const cBIn   = { x: camB_In.x, y: camB_In.y, r: CAM_SPROCKET_R };
+      const cBEx   = { x: camB_Ex.x, y: camB_Ex.y, r: CAM_SPROCKET_R };
+
+      const rawPts = [];
+      function appendArc(cx, cy, r, startAng, endAng, ccw, steps) {
+        let delta = endAng - startAng;
+        if (ccw) {
+          while (delta <= 0) delta += Math.PI * 2;
+        } else {
+          while (delta >= 0) delta -= Math.PI * 2;
+        }
+        for (let i = 0; i <= steps; i++) {
+          const a = startAng + (delta * i) / steps;
+          rawPts.push(new THREE.Vector3(cx + Math.cos(a) * r, cy + Math.sin(a) * r, 2.05));
+        }
+      }
+
+      appendArc(cCrank.x, cCrank.y, cCrank.r, -Math.PI * 0.72, -Math.PI * 0.28, true, 8);
+      appendArc(cAEx.x, cAEx.y, cAEx.r, -Math.PI * 0.25, Math.PI * 0.72, true, 16);
+      appendArc(cAIn.x, cAIn.y, cAIn.r, Math.PI * 0.28, Math.PI * 1.15, true, 14);
+      appendArc(idlerA.x, idlerA.y, idlerA.r, Math.PI * 0.12, -Math.PI * 0.72, false, 10);
+      appendArc(idlerB.x, idlerB.y, idlerB.r, -Math.PI * 0.28, -Math.PI * 1.12, false, 10);
+      appendArc(cBIn.x, cBIn.y, cBIn.r, -Math.PI * 0.15, Math.PI * 0.72, true, 14);
+      appendArc(cBEx.x, cBEx.y, cBEx.r, Math.PI * 0.28, Math.PI * 1.25, true, 16);
+
+      const cleanPts = [];
+      for (let i = 0; i < rawPts.length; i++) {
+        const p = rawPts[i];
+        if (cleanPts.length === 0 || p.distanceTo(cleanPts[cleanPts.length - 1]) > 0.015) {
+          cleanPts.push(p);
+        }
+      }
+      if (cleanPts.length > 2 && cleanPts[0].distanceTo(cleanPts[cleanPts.length - 1]) < 0.02) {
+        cleanPts.pop();
+      }
+      return new THREE.CatmullRomCurve3(cleanPts, true, 'centripetal', 0.2);
+    }
+
+    const timingChainCurve = buildExactTimingChainCurve();
+    const timingChainLength = timingChainCurve.getLength();
+
+    const CHAIN_LINK_COUNT = 160;
+    const chainRollerInst = new THREE.InstancedMesh(
+      new THREE.CylinderGeometry(0.024, 0.024, 0.11, 10),
+      MAT.crankMachined,
+      CHAIN_LINK_COUNT
+    );
+    const chainOuterPlateInst = new THREE.InstancedMesh(
+      new THREE.BoxGeometry(0.088, 0.044, 0.145),
+      MAT.crankWebDark,
+      CHAIN_LINK_COUNT
+    );
+    const chainInnerPlateInst = new THREE.InstancedMesh(
+      new THREE.BoxGeometry(0.082, 0.036, 0.118),
+      MAT.goldAnodized,
+      CHAIN_LINK_COUNT
+    );
+    chainRollerInst.frustumCulled = false;
+    chainOuterPlateInst.frustumCulled = false;
+    chainInnerPlateInst.frustumCulled = false;
+    timingDriveGroup.add(chainRollerInst, chainOuterPlateInst, chainInnerPlateInst);
+
+    const _chainDummy = new THREE.Object3D();
+    function updateTimingChainLinks(crankDeg) {
+      const linearTravel = (crankDeg * DEG2RAD) * CRANK_SPROCKET_R;
+      const uOffset = ((linearTravel / timingChainLength) % 1 + 1) % 1;
+
+      for (let i = 0; i < CHAIN_LINK_COUNT; i++) {
+        const u = (i / CHAIN_LINK_COUNT + uOffset) % 1;
+        const pos = timingChainCurve.getPointAt(u);
+        const tan = timingChainCurve.getTangentAt(u);
+        const angleZ = Math.atan2(tan.y, tan.x);
+
+        _chainDummy.position.copy(pos);
+        _chainDummy.rotation.set(Math.PI / 2, 0, 0);
+        _chainDummy.updateMatrix();
+        chainRollerInst.setMatrixAt(i, _chainDummy.matrix);
+
+        _chainDummy.rotation.set(0, 0, angleZ);
+        _chainDummy.updateMatrix();
+        if (i % 2 === 0) {
+          chainOuterPlateInst.setMatrixAt(i, _chainDummy.matrix);
+        } else {
+          chainInnerPlateInst.setMatrixAt(i, _chainDummy.matrix);
+        }
+      }
+      chainRollerInst.instanceMatrix.needsUpdate = true;
+      chainOuterPlateInst.instanceMatrix.needsUpdate = true;
+      chainInnerPlateInst.instanceMatrix.needsUpdate = true;
+    }
+
+    function createHelicalSpringGeometry(radius, height, turns, wireRadius, segments = 96) {
+      const pts = [];
+      for (let i = 0; i <= segments; i++) {
+        const t = i / segments;
+        const ang = t * turns * Math.PI * 2;
+        pts.push(new THREE.Vector3(Math.cos(ang) * radius, t * height, Math.sin(ang) * radius));
+      }
+      const curve = new THREE.CatmullRomCurve3(pts);
+      return new THREE.TubeGeometry(curve, segments, wireRadius, 6, false);
+    }
+    const baseSpringGeo = createHelicalSpringGeometry(0.068, 0.34, 5.5, 0.013, 84);
+
+    const cylinderValveAssemblies = [];
+
+    CYLINDER_SPECS.forEach((cyl) => {
+      const bankSign = cyl.bank === 'A' ? 1 : -1;
+      const headGroup = bankGroups[cyl.bank];
+      const cylRig = new THREE.Group();
+      cylRig.position.set(0, DECK_DIST, cyl.z);
+      headGroup.add(cylRig);
+
+      const inSign = bankSign > 0 ? -1 : 1;
+      const exSign = -inSign;
+      const intakeValves = [];
+      const exhaustValves = [];
+
+      [-0.14, 0.14].forEach((zOff) => {
+        const inPivot = new THREE.Group();
+        inPivot.position.set(inSign * 0.21, 0.04, zOff);
+        inPivot.rotation.z = -inSign * 18 * DEG2RAD;
+        cylRig.add(inPivot);
+
+        const inMoving = new THREE.Group();
+        inPivot.add(inMoving);
+        const inStem = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.016, 0.016, 0.68, 12),
+          MAT.valvePolished
+        );
+        inStem.position.y = 0.34;
+        inMoving.add(inStem);
+        const inHead = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.115, 0.03, 0.035, 20),
+          MAT.valvePolished
+        );
+        inHead.position.y = 0.015;
+        inMoving.add(inHead);
+        const inRetainer = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.072, 0.055, 0.025, 16),
+          MAT.goldAnodized
+        );
+        inRetainer.position.y = 0.62;
+        inMoving.add(inRetainer);
+
+        const inSpring = new THREE.Mesh(baseSpringGeo, MAT.springSteel);
+        inSpring.position.y = 0.28;
+        inPivot.add(inSpring);
+        intakeValves.push({ moving: inMoving, spring: inSpring });
+
+        const exPivot = new THREE.Group();
+        exPivot.position.set(exSign * 0.21, 0.04, zOff);
+        exPivot.rotation.z = -exSign * 18 * DEG2RAD;
+        cylRig.add(exPivot);
+
+        const exMoving = new THREE.Group();
+        exPivot.add(exMoving);
+        const exStem = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.016, 0.016, 0.68, 12),
+          MAT.valvePolished
+        );
+        exStem.position.y = 0.34;
+        exMoving.add(exStem);
+        const exHead = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.098, 0.028, 0.035, 20),
+          MAT.valvePolished
+        );
+        exHead.position.y = 0.015;
+        exMoving.add(exHead);
+        const exRetainer = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.072, 0.055, 0.025, 16),
+          MAT.goldAnodized
+        );
+        exRetainer.position.y = 0.62;
+        exMoving.add(exRetainer);
+
+        const exSpring = new THREE.Mesh(baseSpringGeo, MAT.springSteel);
+        exSpring.position.y = 0.28;
+        exPivot.add(exSpring);
+        exhaustValves.push({ moving: exMoving, spring: exSpring });
+      });
+
+      const plugGroup = new THREE.Group();
+      plugGroup.position.set(0, 0.45, 0);
+      cylRig.add(plugGroup);
+
+      const ceramic = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.036, 0.042, 0.42, 16),
+        MAT.ceramicWhite
+      );
+      ceramic.position.y = 0.15;
+      plugGroup.add(ceramic);
+
+      const hexNut = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.062, 0.062, 0.10, 6),
+        MAT.boltChrome
+      );
+      hexNut.position.y = -0.06;
+      plugGroup.add(hexNut);
+
+      const coilPack = new THREE.Mesh(
+        new THREE.BoxGeometry(0.18, 0.16, 0.24),
+        MAT.coilRed
+      );
+      coilPack.position.y = 0.56;
+      plugGroup.add(coilPack);
+
+      const sparkMat = new THREE.MeshBasicMaterial({
+        color: 0x7dd3fc,
+        transparent: true,
+        opacity: 0.0,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      });
+      const sparkCore = new THREE.Mesh(new THREE.SphereGeometry(0.075, 12, 12), sparkMat);
+      sparkCore.position.set(0, 0.01, 0);
+      cylRig.add(sparkCore);
+
+      const combMat = new THREE.MeshBasicMaterial({
+        color: 0xff5500,
+        transparent: true,
+        opacity: 0.0,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      });
+      const combDome = new THREE.Mesh(
+        new THREE.CylinderGeometry(BORE_R * 0.92, BORE_R * 0.92, 0.22, 24),
+        combMat
+      );
+      combDome.position.set(0, -0.09, 0);
+      cylRig.add(combDome);
+
+      cylinderValveAssemblies.push({
+        intakeValves,
+        exhaustValves,
+        sparkMat,
+        sparkCore,
+        combMat,
+      });
+    });
+
+    // -------------------------------------------------------------------------
+    // 5E. EXTERNAL TWIN TURBOCHARGERS, WASTEGATES, 4-INTO-1 HEADERS & INTERCOOLER
+    // -------------------------------------------------------------------------
+    const turboSystems = { A: null, B: null };
+    const headerGroups = { A: null, B: null };
+    const turboCutawayMeshes = [];
+    const turboNormalMeshes = [];
+
+    function buildTurbochargerAssembly(sideKey) {
+      const sign = sideKey === 'A' ? 1 : -1;
+      const turboRoot = new THREE.Group();
+      turboRoot.position.set(sign * 2.52, 0.96, 0.62);
+      engineRoot.add(turboRoot);
+
+      registerExplodable(turboRoot, new THREE.Vector3(sign * 1.95, 0.25, 0.15), 0.10, 0.80);
+
+      const chra = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.24, 0.24, 0.44, 24),
+        MAT.chraIron
+      );
+      chra.rotation.x = Math.PI / 2;
+      chra.castShadow = true;
+      turboRoot.add(chra);
+
+      const shaft = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.045, 0.045, 1.05, 16),
+        MAT.crankMachined
+      );
+      shaft.rotation.x = Math.PI / 2;
+      turboRoot.add(shaft);
+
+      // Compressor Volute Housing (Front +Z side)
+      const compHousingFull = new THREE.Mesh(
+        new THREE.TorusGeometry(0.42, 0.21, 20, 36),
+        MAT.turboCompHousing
+      );
+      compHousingFull.position.z = 0.34;
+      compHousingFull.castShadow = true;
+      turboRoot.add(compHousingFull);
+
+      // Open, thick-walled blue velocity-stack intake bellmouth (LatheGeometry)
+      const bellPts = [
+        new THREE.Vector2(0.23, 0.00),
+        new THREE.Vector2(0.23, 0.14),
+        new THREE.Vector2(0.29, 0.26),
+        new THREE.Vector2(0.32, 0.26),
+        new THREE.Vector2(0.265, 0.12),
+        new THREE.Vector2(0.265, 0.00),
+      ];
+      const bellGeo = new THREE.LatheGeometry(bellPts, 32);
+      bellGeo.rotateX(Math.PI / 2);
+      const compIntakeBell = new THREE.Mesh(bellGeo, MAT.siliconeBlue);
+      compIntakeBell.position.z = 0.42;
+      compIntakeBell.castShadow = true;
+      turboRoot.add(compIntakeBell);
+
+      const compThroat = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.232, 0.232, 0.18, 28, 1, true),
+        MAT.chraIron
+      );
+      compThroat.rotation.x = Math.PI / 2;
+      compThroat.position.z = 0.44;
+      turboRoot.add(compThroat);
+
+      const compHousingCut = new THREE.Mesh(
+        new THREE.TorusGeometry(0.42, 0.21, 20, 28, Math.PI * 1.25),
+        MAT.turboCompHousing
+      );
+      compHousingCut.position.z = 0.34;
+      compHousingCut.rotation.z = sign > 0 ? Math.PI * 0.4 : -Math.PI * 0.65;
+      compHousingCut.visible = false;
+      turboRoot.add(compHousingCut);
+
+      // Billet 12-Blade Compressor Impeller
+      const compWheel = new THREE.Group();
+      compWheel.position.z = 0.36;
+      const compHub = new THREE.Mesh(
+        new THREE.ConeGeometry(0.14, 0.26, 20),
+        MAT.billetWheel
+      );
+      compHub.rotation.x = Math.PI / 2;
+      compWheel.add(compHub);
+
+      const compNut = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.042, 0.042, 0.08, 6),
+        MAT.goldAnodized
+      );
+      compNut.rotation.x = Math.PI / 2;
+      compNut.position.z = 0.15;
+      compWheel.add(compNut);
+
+      const compBladeGeo = new THREE.BoxGeometry(0.012, 0.15, 0.18);
+      for (let i = 0; i < 12; i++) {
+        const b = new THREE.Mesh(compBladeGeo, MAT.billetWheel);
+        const a = (i / 12) * Math.PI * 2;
+        b.position.set(Math.cos(a) * 0.12, Math.sin(a) * 0.12, 0.01);
+        b.rotation.z = a;
+        b.rotation.y = 0.48;
+        compWheel.add(b);
+      }
+      turboRoot.add(compWheel);
+
+      // Turbine Volute Housing (Rear -Z side)
+      const turbHousingFull = new THREE.Mesh(
+        new THREE.TorusGeometry(0.40, 0.20, 20, 36),
+        MAT.turboTurbineHousing
+      );
+      turbHousingFull.position.z = -0.34;
+      turbHousingFull.castShadow = true;
+      turboRoot.add(turbHousingFull);
+
+      const turbHousingCut = new THREE.Mesh(
+        new THREE.TorusGeometry(0.40, 0.20, 20, 28, Math.PI * 1.25),
+        MAT.turboTurbineHousing
+      );
+      turbHousingCut.position.z = -0.34;
+      turbHousingCut.rotation.z = sign > 0 ? Math.PI * 0.4 : -Math.PI * 0.65;
+      turbHousingCut.visible = false;
+      turboRoot.add(turbHousingCut);
+
+      // Inconel 11-Blade Turbine Wheel
+      const turbWheel = new THREE.Group();
+      turbWheel.position.z = -0.36;
+      const turbHub = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.11, 0.16, 0.22, 20),
+        MAT.inconelWheel
+      );
+      turbHub.rotation.x = Math.PI / 2;
+      turbWheel.add(turbHub);
+
+      const turbBladeGeo = new THREE.BoxGeometry(0.014, 0.155, 0.19);
+      for (let i = 0; i < 11; i++) {
+        const b = new THREE.Mesh(turbBladeGeo, MAT.inconelWheel);
+        const a = (i / 11) * Math.PI * 2;
+        b.position.set(Math.cos(a) * 0.125, Math.sin(a) * 0.125, 0);
+        b.rotation.z = a;
+        b.rotation.y = -0.52;
+        turbWheel.add(b);
+      }
+      turboRoot.add(turbWheel);
+
+      if (sideKey === 'A') {
+        turboNormalMeshes.push(compHousingFull, turbHousingFull);
+        turboCutawayMeshes.push(compHousingCut, turbHousingCut);
+      }
+
+      // Single-source-of-truth Exhaust Downpipe & Wastegate Bypass in turboRoot local space
+      const exhaustDownpipeCurve = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(0, 0, -0.42),
+        new THREE.Vector3(0, 0, -0.78),
+        new THREE.Vector3(sign * 0.14, -0.24, -1.32),
+        new THREE.Vector3(sign * 0.10, -0.68, -2.18),
+        new THREE.Vector3(sign * 0.04, -0.92, -3.12),
+      ]);
+      const downpipeMesh = new THREE.Mesh(
+        new THREE.TubeGeometry(exhaustDownpipeCurve, 36, 0.185, 18, false),
+        MAT.exhaustHeader
+      );
+      downpipeMesh.castShadow = true;
+      turboRoot.add(downpipeMesh);
+
+      const dpFlange = createBoltedFlange(0.24, 0.04, 6, MAT.boltChrome, MAT.goldAnodized);
+      dpFlange.position.set(0, 0, -0.56);
+      turboRoot.add(dpFlange);
+
+      const wastegateBypassCurve = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(-sign * 0.26, -0.34, -0.34),
+        new THREE.Vector3(-sign * 0.16, -0.44, -0.82),
+        new THREE.Vector3(sign * 0.02, -0.46, -1.38),
+        new THREE.Vector3(sign * 0.10, -0.68, -2.18),
+      ]);
+      const wgPipeMesh = new THREE.Mesh(
+        new THREE.TubeGeometry(wastegateBypassCurve, 24, 0.072, 12, false),
+        MAT.exhaustHeader
+      );
+      turboRoot.add(wgPipeMesh);
+
+      const turbineExhaustCurve = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(-sign * 0.34, 0.28, -0.34),
+        new THREE.Vector3(0.0, 0.36, -0.34),
+        new THREE.Vector3(sign * 0.34, 0.0, -0.34),
+        new THREE.Vector3(0.0, -0.22, -0.36),
+        new THREE.Vector3(0, 0, -0.42),
+        new THREE.Vector3(0, 0, -0.78),
+        new THREE.Vector3(sign * 0.14, -0.24, -1.32),
+        new THREE.Vector3(sign * 0.10, -0.68, -2.18),
+        new THREE.Vector3(sign * 0.04, -0.92, -3.12),
+      ]);
+
+      const wastegateExhaustCurve = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(-sign * 0.34, 0.28, -0.34),
+        new THREE.Vector3(-sign * 0.38, -0.05, -0.34),
+        new THREE.Vector3(-sign * 0.26, -0.34, -0.34),
+        new THREE.Vector3(-sign * 0.16, -0.44, -0.82),
+        new THREE.Vector3(sign * 0.02, -0.46, -1.38),
+        new THREE.Vector3(sign * 0.10, -0.68, -2.18),
+        new THREE.Vector3(sign * 0.04, -0.92, -3.12),
+      ]);
+
+      const wgActuatorCan = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.11, 0.11, 0.20, 18),
+        MAT.goldAnodized
+      );
+      wgActuatorCan.position.set(-sign * 0.34, 0.42, -0.10);
+      wgActuatorCan.rotation.x = Math.PI * 0.42;
+      turboRoot.add(wgActuatorCan);
+
+      const wgRod = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.015, 0.015, 0.38, 10),
+        MAT.boltChrome
+      );
+      wgRod.position.set(-sign * 0.30, 0.18, -0.22);
+      wgRod.rotation.x = 0.25;
+      turboRoot.add(wgRod);
+
+      const wgFlapperPivot = new THREE.Group();
+      wgFlapperPivot.position.set(-sign * 0.26, -0.30, -0.34);
+      const wgFlapperDisc = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.075, 0.075, 0.022, 16),
+        MAT.coilRed
+      );
+      wgFlapperDisc.position.set(0, -0.05, 0);
+      wgFlapperPivot.add(wgFlapperDisc);
+      turboRoot.add(wgFlapperPivot);
+
+      const headerGroup = new THREE.Group();
+      engineRoot.add(headerGroup);
+      headerGroups[sideKey] = headerGroup;
+      registerExplodable(headerGroup, new THREE.Vector3(sign * 1.15, 0.25, 0), 0.10, 0.75);
+
+      const bankCyls = CYLINDER_SPECS.filter((c) => c.bank === sideKey);
+      const collectorPt = new THREE.Vector3(sign * 2.16, 1.24, 0.28);
+
+      bankCyls.forEach((cyl) => {
+        const portStart = new THREE.Vector3(sign * 1.62, 1.52, cyl.z);
+        const mid1 = new THREE.Vector3(sign * 2.08, 1.48, cyl.z * 0.85);
+        const mid2 = new THREE.Vector3(sign * 2.18, 1.35, THREE.MathUtils.lerp(cyl.z, 0.28, 0.65));
+        const runnerCurve = new THREE.CatmullRomCurve3([portStart, mid1, mid2, collectorPt]);
+        const runnerMesh = new THREE.Mesh(
+          new THREE.TubeGeometry(runnerCurve, 24, 0.085, 12, false),
+          MAT.exhaustHeader
+        );
+        runnerMesh.castShadow = true;
+        headerGroup.add(runnerMesh);
+
+        const portFlange = createBoltedFlange(0.125, 0.03, 2, MAT.boltChrome, MAT.boltChrome);
+        portFlange.position.copy(portStart);
+        portFlange.rotation.y = Math.PI / 2;
+        headerGroup.add(portFlange);
+      });
+
+      const collectorFlange = createBoltedFlange(0.18, 0.04, 4, MAT.boltChrome, MAT.goldAnodized);
+      collectorFlange.position.copy(collectorPt);
+      headerGroup.add(collectorFlange);
+
+      turboSystems[sideKey] = {
+        root: turboRoot,
+        compWheel,
+        turbWheel,
+        wgFlapperPivot,
+        wgRod,
+        turbineExhaustCurve,
+        wastegateExhaustCurve,
+      };
+    }
+
+    buildTurbochargerAssembly('A');
+    buildTurbochargerAssembly('B');
+
+    // Front-Mount Intercooler & Cold Charge Piping
+    const intercoolerGroup = new THREE.Group();
+    intercoolerGroup.position.set(0, 0.12, 2.86);
+    engineRoot.add(intercoolerGroup);
+    registerExplodable(intercoolerGroup, new THREE.Vector3(0, -0.15, 1.65), 0.05, 0.65);
+
+    const icCore = new THREE.Mesh(
+      new THREE.BoxGeometry(2.65, 0.86, 0.24),
+      MAT.chraIron
+    );
+    icCore.castShadow = true;
+    intercoolerGroup.add(icCore);
+
+    for (let y = -0.36; y <= 0.36; y += 0.09) {
+      const bar = new THREE.Mesh(
+        new THREE.BoxGeometry(2.62, 0.035, 0.26),
+        MAT.chargePipe
+      );
+      bar.position.y = y;
+      intercoolerGroup.add(bar);
+    }
+
+    [-1.46, 1.46].forEach((tx) => {
+      const endTank = new THREE.Mesh(
+        new THREE.BoxGeometry(0.28, 0.92, 0.32),
+        MAT.intakePlenum
+      );
+      endTank.position.x = tx;
+      endTank.castShadow = true;
+      intercoolerGroup.add(endTank);
+    });
+
+    const chargePipingGroup = new THREE.Group();
+    engineRoot.add(chargePipingGroup);
+    registerExplodable(chargePipingGroup, new THREE.Vector3(0, 0.65, 1.15), 0.0, 0.60);
+
+    const hotCurves = {};
+    ['A', 'B'].forEach((sideKey) => {
+      const sign = sideKey === 'A' ? 1 : -1;
+      const hotCurve = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(sign * 2.52, 0.56, 0.96),
+        new THREE.Vector3(sign * 2.65, 0.12, 1.85),
+        new THREE.Vector3(sign * 2.15, 0.08, 2.72),
+        new THREE.Vector3(sign * 1.58, 0.12, 2.86),
+      ]);
+      hotCurves[sideKey] = hotCurve;
+      const hotPipe = new THREE.Mesh(
+        new THREE.TubeGeometry(hotCurve, 28, 0.115, 14, false),
+        MAT.chargePipe
+      );
+      hotPipe.castShadow = true;
+      chargePipingGroup.add(hotPipe);
+
+      const coupler1 = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.132, 0.132, 0.18, 20),
+        MAT.siliconeBlue
+      );
+      coupler1.position.set(sign * 2.53, 0.50, 1.05);
+      coupler1.rotation.x = 0.55;
+      chargePipingGroup.add(coupler1);
+
+      const coupler2 = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.132, 0.132, 0.18, 20),
+        MAT.siliconeBlue
+      );
+      coupler2.position.set(sign * 1.72, 0.12, 2.84);
+      coupler2.rotation.z = Math.PI / 2;
+      chargePipingGroup.add(coupler2);
+    });
+
+    const coldCurve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(0, 0.55, 2.86),
+      new THREE.Vector3(0, 1.85, 2.78),
+      new THREE.Vector3(0, 2.18, 2.28),
+      new THREE.Vector3(0, 2.26, 1.82),
+    ]);
+    const coldPipe = new THREE.Mesh(
+      new THREE.TubeGeometry(coldCurve, 28, 0.145, 16, false),
+      MAT.chargePipe
+    );
+    coldPipe.castShadow = true;
+    chargePipingGroup.add(coldPipe);
+
+    // Throttle Body & Moving Butterfly Plate
+    const throttleGroup = new THREE.Group();
+    throttleGroup.position.set(0, 2.26, 1.72);
+    chargePipingGroup.add(throttleGroup);
+
+    const tbHousing = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.175, 0.175, 0.24, 24),
+      MAT.intakePlenum
+    );
+    tbHousing.rotation.x = Math.PI / 2;
+    throttleGroup.add(tbHousing);
+
+    const throttlePlate = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.155, 0.155, 0.015, 24),
+      MAT.goldAnodized
+    );
+    throttlePlate.rotation.x = Math.PI / 2;
+    throttleGroup.add(throttlePlate);
+
+    // Central Intake Plenum & 8 Individual Runners
+    const plenumGroup = new THREE.Group();
+    engineRoot.add(plenumGroup);
+    registerExplodable(plenumGroup, new THREE.Vector3(0, 1.55, 0), 0.0, 0.55);
+
+    const plenumChamber = new THREE.Mesh(
+      new THREE.BoxGeometry(1.12, 0.46, 3.28),
+      MAT.intakePlenum
+    );
+    plenumChamber.position.set(0, 2.26, 0.0);
+    plenumChamber.castShadow = true;
+    plenumGroup.add(plenumChamber);
+
+    const plenumTopPlate = new THREE.Mesh(
+      new THREE.BoxGeometry(0.88, 0.06, 2.95),
+      MAT.valveCover
+    );
+    plenumTopPlate.position.set(0, 2.51, 0.0);
+    plenumGroup.add(plenumTopPlate);
+
+    CYLINDER_SPECS.forEach((cyl) => {
+      const sign = cyl.bank === 'A' ? 1 : -1;
+      const runnerCurve = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(sign * 0.45, 2.15, cyl.z),
+        new THREE.Vector3(sign * 0.85, 2.02, cyl.z),
+        new THREE.Vector3(sign * 1.18, 1.78, cyl.z),
+      ]);
+      const runner = new THREE.Mesh(
+        new THREE.TubeGeometry(runnerCurve, 16, 0.082, 12, false),
+        MAT.chargePipe
+      );
+      plenumGroup.add(runner);
+    });
+
+    // =========================================================================
+    // 6. DUAL-COLOR AIRFLOW PARTICLES & STREAMLINES (VALVE-GATED 8-CYLINDER)
+    // =========================================================================
+    const airflowGroup = new THREE.Group();
+    scene.add(airflowGroup);
+
+    // 2 Main Intake Trunk Paths: Fresh air bellmouth -> compressor -> exact hotCurve -> intercooler -> exact coldCurve -> throttle -> plenum rail
+    const intakeTrunkPaths = ['A', 'B'].map((sideKey) => {
+      const sign = sideKey === 'A' ? 1 : -1;
+      return new THREE.CatmullRomCurve3([
+        new THREE.Vector3(sign * 2.52, 0.96, 1.75),
+        new THREE.Vector3(sign * 2.52, 0.96, 0.98),
+        ...hotCurves[sideKey].getPoints(14),
+        new THREE.Vector3(sign * 0.35, 0.12, 2.86),
+        ...coldCurve.getPoints(14),
+        new THREE.Vector3(0, 2.26, 1.35),
+        new THREE.Vector3(sign * 0.24, 2.22, 0.0),
+        new THREE.Vector3(sign * 0.28, 2.18, -1.42),
+      ]);
+    });
+
+    // 8 Individual Cylinder Intake Paths: Plenum -> intake runner -> intake valve -> combustion chamber
+    const intakeCylPaths = CYLINDER_SPECS.map((cyl) => {
+      const sign = cyl.bank === 'A' ? 1 : -1;
+      const chamberPos = cyl.u.clone().multiplyScalar(DECK_DIST - 0.18).setZ(cyl.z);
+      const valveSeatPos = cyl.u.clone().multiplyScalar(DECK_DIST + 0.04).addScaledVector(cyl.v, -sign * 0.20).setZ(cyl.z);
+      return new THREE.CatmullRomCurve3([
+        new THREE.Vector3(sign * 0.36, 2.18, cyl.z),
+        new THREE.Vector3(sign * 0.85, 2.02, cyl.z),
+        new THREE.Vector3(sign * 1.18, 1.78, cyl.z),
+        valveSeatPos,
+        chamberPos,
+      ]);
+    });
+
+    // 8 Individual Cylinder Exhaust Paths: Combustion chamber -> exhaust valve -> 4-into-1 header runner -> collector
+    const exhaustCylPaths = CYLINDER_SPECS.map((cyl) => {
+      const sign = cyl.bank === 'A' ? 1 : -1;
+      const chamberPos = cyl.u.clone().multiplyScalar(DECK_DIST - 0.18).setZ(cyl.z);
+      const exValvePos = cyl.u.clone().multiplyScalar(DECK_DIST + 0.04).addScaledVector(cyl.v, sign * 0.20).setZ(cyl.z);
+      const portStart = new THREE.Vector3(sign * 1.62, 1.52, cyl.z);
+      const mid1 = new THREE.Vector3(sign * 2.08, 1.48, cyl.z * 0.85);
+      const mid2 = new THREE.Vector3(sign * 2.18, 1.35, THREE.MathUtils.lerp(cyl.z, 0.28, 0.65));
+      const collectorPt = new THREE.Vector3(sign * 2.16, 1.24, 0.28);
+      return new THREE.CatmullRomCurve3([
+        chamberPos,
+        exValvePos,
+        portStart,
+        mid1,
+        mid2,
+        collectorPt,
+      ]);
+    });
+
+    // 2 Main Exhaust Trunk Paths: Collector -> turbine housing -> downpipe / wastegate
+    const exhaustTrunkPaths = ['A', 'B'].map((sideKey) => {
+      const sign = sideKey === 'A' ? 1 : -1;
+      const tSys = turboSystems[sideKey];
+      const basePos = tSys.root.position;
+      const turbinePts = [
+        new THREE.Vector3(sign * 2.16, 1.24, 0.28),
+        ...tSys.turbineExhaustCurve.getPoints(28).map((p) => p.clone().add(basePos)),
+      ];
+      const wastegatePts = [
+        new THREE.Vector3(sign * 2.16, 1.24, 0.28),
+        ...tSys.wastegateExhaustCurve.getPoints(24).map((p) => p.clone().add(basePos)),
+      ];
+      return {
+        sideKey,
+        turbine: new THREE.CatmullRomCurve3(turbinePts),
+        wastegate: new THREE.CatmullRomCurve3(wastegatePts),
+      };
+    });
+
+    const MAX_TRUNK_PARTICLES_PER_SIDE = 90;
+    const MAX_CYL_PARTICLES_PER_CYL = 24;
+    const TOTAL_TRUNK_PARTICLES = MAX_TRUNK_PARTICLES_PER_SIDE * 2;
+    const TOTAL_CYL_PARTICLES = MAX_CYL_PARTICLES_PER_CYL * 8;
+
+    const particleSphereGeo = new THREE.SphereGeometry(0.036, 8, 8);
+    const cylParticleSphereGeo = new THREE.SphereGeometry(0.028, 8, 8);
+
+    const intakeParticleMat = new THREE.MeshBasicMaterial({
+      color: 0x38bdf8,
+      transparent: true,
+      opacity: 0.92,
+    });
+    const exhaustParticleMat = new THREE.MeshBasicMaterial({
+      color: 0xf97316,
+      transparent: true,
+      opacity: 0.94,
+    });
+
+    const intakeTrunkInst = new THREE.InstancedMesh(particleSphereGeo, intakeParticleMat, TOTAL_TRUNK_PARTICLES);
+    const intakeCylInst   = new THREE.InstancedMesh(cylParticleSphereGeo, intakeParticleMat, TOTAL_CYL_PARTICLES);
+    const exhaustCylInst  = new THREE.InstancedMesh(cylParticleSphereGeo, exhaustParticleMat, TOTAL_CYL_PARTICLES);
+    const exhaustTrunkInst = new THREE.InstancedMesh(particleSphereGeo, exhaustParticleMat, TOTAL_TRUNK_PARTICLES);
+
+    [intakeTrunkInst, intakeCylInst, exhaustCylInst, exhaustTrunkInst].forEach((inst) => {
+      inst.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      inst.frustumCulled = false;
+      airflowGroup.add(inst);
+    });
+
+    const intakeTrunkParticles = [];
+    const exhaustTrunkParticles = [];
+    for (let s = 0; s < 2; s++) {
+      for (let i = 0; i < MAX_TRUNK_PARTICLES_PER_SIDE; i++) {
+        intakeTrunkParticles.push({
+          side: s,
+          t: i / MAX_TRUNK_PARTICLES_PER_SIDE,
+          jitter: new THREE.Vector3(
+            (Math.random() - 0.5) * 0.036,
+            (Math.random() - 0.5) * 0.036,
+            (Math.random() - 0.5) * 0.036
+          ),
+        });
+        exhaustTrunkParticles.push({
+          side: s,
+          t: i / MAX_TRUNK_PARTICLES_PER_SIDE,
+          viaWastegate: i % 3 === 0,
+          jitter: new THREE.Vector3(
+            (Math.random() - 0.5) * 0.036,
+            (Math.random() - 0.5) * 0.036,
+            (Math.random() - 0.5) * 0.036
+          ),
+        });
+      }
+    }
+
+    const intakeCylParticles = [];
+    const exhaustCylParticles = [];
+    for (let c = 0; c < 8; c++) {
+      for (let i = 0; i < MAX_CYL_PARTICLES_PER_CYL; i++) {
+        intakeCylParticles.push({
+          cylIdx: c,
+          t: i / MAX_CYL_PARTICLES_PER_CYL,
+          jitter: new THREE.Vector3(
+            (Math.random() - 0.5) * 0.035,
+            (Math.random() - 0.5) * 0.035,
+            (Math.random() - 0.5) * 0.035
+          ),
+        });
+        exhaustCylParticles.push({
+          cylIdx: c,
+          t: i / MAX_CYL_PARTICLES_PER_CYL,
+          jitter: new THREE.Vector3(
+            (Math.random() - 0.5) * 0.035,
+            (Math.random() - 0.5) * 0.035,
+            (Math.random() - 0.5) * 0.035
+          ),
+        });
+      }
+    }
+
+    // Streamline tubes (Trunk + 8 Individual Intake Runners + 8 Individual Exhaust Headers)
+    const streamlinesGroup = new THREE.Group();
+    streamlinesGroup.visible = false;
+    airflowGroup.add(streamlinesGroup);
+
+    const intakeStreamMat = new THREE.MeshBasicMaterial({
+      color: 0x38bdf8,
+      transparent: true,
+      opacity: 0.58,
+      depthWrite: false,
+    });
+    const exhaustStreamMat = new THREE.MeshBasicMaterial({
+      color: 0xf97316,
+      transparent: true,
+      opacity: 0.62,
+      depthWrite: false,
+    });
+    const wgStreamMat = new THREE.MeshBasicMaterial({
+      color: 0xfacc15,
+      transparent: true,
+      opacity: 0.0,
+      depthWrite: false,
+    });
+
+    const intakeTrunkStreamMeshes = intakeTrunkPaths.map((curve, idx) => {
+      const m = new THREE.Mesh(new THREE.TubeGeometry(curve, 84, 0.028, 8, false), intakeStreamMat);
+      m.userData.sideKey = idx === 0 ? 'A' : 'B';
+      streamlinesGroup.add(m);
+      return m;
+    });
+
+    const intakeCylStreamMeshes = intakeCylPaths.map((curve, idx) => {
+      const mat = intakeStreamMat.clone();
+      const m = new THREE.Mesh(new THREE.TubeGeometry(curve, 32, 0.024, 8, false), mat);
+      m.userData.cylIdx = idx;
+      streamlinesGroup.add(m);
+      return m;
+    });
+
+    const exhaustCylStreamMeshes = exhaustCylPaths.map((curve, idx) => {
+      const mat = exhaustStreamMat.clone();
+      const m = new THREE.Mesh(new THREE.TubeGeometry(curve, 36, 0.026, 8, false), mat);
+      m.userData.cylIdx = idx;
+      streamlinesGroup.add(m);
+      return m;
+    });
+
+    const exhaustTrunkStreamMeshes = exhaustTrunkPaths.map((ep) => {
+      const mTurb = new THREE.Mesh(new THREE.TubeGeometry(ep.turbine, 76, 0.032, 8, false), exhaustStreamMat);
+      const mWg = new THREE.Mesh(new THREE.TubeGeometry(ep.wastegate, 60, 0.024, 8, false), wgStreamMat);
+      mTurb.userData.sideKey = ep.sideKey;
+      mWg.userData.sideKey = ep.sideKey;
+      streamlinesGroup.add(mTurb, mWg);
+      return { mTurb, mWg, sideKey: ep.sideKey };
+    });
+
+    const _dummy = new THREE.Object3D();
+    const _zeroScaleMatrix = new THREE.Matrix4().makeScale(0, 0, 0);
+    const _tmpVec = new THREE.Vector3();
+
+    function getExplodedPathOffset(sideKey, kind) {
+      const t = THREE.MathUtils.smoothstep(sim.explodeCurrent, 0.0, 0.85);
+      if (t <= 0.0001) return _tmpVec.set(0, 0, 0);
+      const sign = sideKey === 'A' ? 1 : -1;
+      if (kind === 'intakeTrunk') return _tmpVec.set(0, t * 0.65, t * 1.15);
+      if (kind === 'intakeCyl')   return _tmpVec.set(0, t * 1.45, 0);
+      if (kind === 'exhaustCyl')  return _tmpVec.set(sign * t * 1.15, t * 0.25, 0);
+      return _tmpVec.set(sign * t * 1.95, t * 0.25, t * 0.15);
+    }
+
+    function updateAirflowVisuals(dt) {
+      const showParticles = sim.airflowMode === 'particles';
+      const showStreams = sim.airflowMode === 'streamlines';
+
+      intakeTrunkInst.visible = showParticles;
+      intakeCylInst.visible = showParticles;
+      exhaustCylInst.visible = showParticles;
+      exhaustTrunkInst.visible = showParticles;
+      streamlinesGroup.visible = showStreams;
+
+      if (sim.airflowMode === 'off') return;
+
+      const rpmFactor = sim.engineRpm / 1800;
+      const flowSpeed = sim.playing && sim.explodeTarget < 0.01
+        ? (0.14 + 0.28 * rpmFactor * (0.25 + 0.75 * sim.throttlePos)) * sim.speedMultiplier
+        : 0;
+
+      const activeTrunkCount = sim.qualityTier === 'high' ? MAX_TRUNK_PARTICLES_PER_SIDE : 45;
+      const activeCylCount = sim.qualityTier === 'high' ? MAX_CYL_PARTICLES_PER_CYL : 12;
+
+      const boostColor = new THREE.Color().setHSL(
+        THREE.MathUtils.lerp(0.55, 0.50, THREE.MathUtils.clamp(sim.boostBar / 1.3, 0, 1)),
+        0.92,
+        THREE.MathUtils.lerp(0.58, 0.72, THREE.MathUtils.clamp(sim.boostBar / 1.3, 0, 1))
+      );
+      intakeParticleMat.color.copy(boostColor);
+      intakeStreamMat.color.copy(boostColor);
+      wgStreamMat.opacity = sim.wastegateOpen > 0.02 ? (0.25 + 0.55 * sim.wastegateOpen) : 0.0;
+
+      if (showStreams) {
+        intakeTrunkStreamMeshes.forEach((m) => {
+          m.position.copy(getExplodedPathOffset(m.userData.sideKey, 'intakeTrunk'));
+        });
+        intakeCylStreamMeshes.forEach((m, idx) => {
+          const cSpec = CYLINDER_SPECS[idx];
+          const lift = sim.cylStates[idx].intakeLift;
+          m.position.copy(getExplodedPathOffset(cSpec.bank, 'intakeCyl'));
+          m.material.color.copy(boostColor);
+          m.material.opacity = lift > 0.04 ? (0.25 + 0.65 * lift) : 0.0;
+          m.visible = lift > 0.04;
+        });
+        exhaustCylStreamMeshes.forEach((m, idx) => {
+          const cSpec = CYLINDER_SPECS[idx];
+          const lift = sim.cylStates[idx].exhaustLift;
+          m.position.copy(getExplodedPathOffset(cSpec.bank, 'exhaustCyl'));
+          m.material.opacity = lift > 0.04 ? (0.28 + 0.65 * lift) : 0.0;
+          m.visible = lift > 0.04;
+        });
+        exhaustTrunkStreamMeshes.forEach((pair) => {
+          const off = getExplodedPathOffset(pair.sideKey, 'exhaustTrunk');
+          pair.mTurb.position.copy(off);
+          pair.mWg.position.copy(off);
+        });
+        return;
+      }
+
+      // 1. Update Main Intake Trunk Particles
+      for (let i = 0; i < TOTAL_TRUNK_PARTICLES; i++) {
+        const p = intakeTrunkParticles[i];
+        const localIdx = i % MAX_TRUNK_PARTICLES_PER_SIDE;
+        if (localIdx >= activeTrunkCount || sim.engineRpm < 50) {
+          intakeTrunkInst.setMatrixAt(i, _zeroScaleMatrix);
+          continue;
+        }
+        p.t = (p.t + flowSpeed * dt) % 1;
+        const pos = intakeTrunkPaths[p.side].getPointAt(p.t);
+        const sideKey = p.side === 0 ? 'A' : 'B';
+        _dummy.position.copy(pos).add(p.jitter).add(getExplodedPathOffset(sideKey, 'intakeTrunk'));
+        const scale = 0.72 + 0.45 * THREE.MathUtils.clamp(sim.boostBar, 0, 1.3);
+        _dummy.scale.setScalar(scale);
+        _dummy.updateMatrix();
+        intakeTrunkInst.setMatrixAt(i, _dummy.matrix);
+      }
+      intakeTrunkInst.instanceMatrix.needsUpdate = true;
+
+      // 2. Update 8 Individual Cylinder Intake Particles (ONLY visible when that cylinder's intake valve is open!)
+      for (let i = 0; i < TOTAL_CYL_PARTICLES; i++) {
+        const p = intakeCylParticles[i];
+        const localIdx = i % MAX_CYL_PARTICLES_PER_CYL;
+        const cState = sim.cylStates[p.cylIdx];
+        const cSpec = CYLINDER_SPECS[p.cylIdx];
+        if (localIdx >= activeCylCount || sim.engineRpm < 50 || cState.intakeLift <= 0.04) {
+          intakeCylInst.setMatrixAt(i, _zeroScaleMatrix);
+          continue;
+        }
+        const valveSpeed = flowSpeed * (1.35 + 0.85 * cState.intakeLift);
+        p.t = (p.t + valveSpeed * dt) % 1;
+        const pos = intakeCylPaths[p.cylIdx].getPointAt(p.t);
+        _dummy.position.copy(pos).add(p.jitter).add(getExplodedPathOffset(cSpec.bank, 'intakeCyl'));
+        const scale = (0.55 + 0.55 * cState.intakeLift) * (0.8 + 0.35 * THREE.MathUtils.clamp(sim.boostBar, 0, 1.3));
+        _dummy.scale.setScalar(scale);
+        _dummy.updateMatrix();
+        intakeCylInst.setMatrixAt(i, _dummy.matrix);
+      }
+      intakeCylInst.instanceMatrix.needsUpdate = true;
+
+      // 3. Update 8 Individual Cylinder Exhaust Particles (ONLY visible when that cylinder's exhaust valve is open!)
+      for (let i = 0; i < TOTAL_CYL_PARTICLES; i++) {
+        const p = exhaustCylParticles[i];
+        const localIdx = i % MAX_CYL_PARTICLES_PER_CYL;
+        const cState = sim.cylStates[p.cylIdx];
+        const cSpec = CYLINDER_SPECS[p.cylIdx];
+        if (localIdx >= activeCylCount || sim.engineRpm < 50 || cState.exhaustLift <= 0.04) {
+          exhaustCylInst.setMatrixAt(i, _zeroScaleMatrix);
+          continue;
+        }
+        const valveSpeed = flowSpeed * (1.45 + 0.90 * cState.exhaustLift);
+        p.t = (p.t + valveSpeed * dt) % 1;
+        const pos = exhaustCylPaths[p.cylIdx].getPointAt(p.t);
+        _dummy.position.copy(pos).add(p.jitter).add(getExplodedPathOffset(cSpec.bank, 'exhaustCyl'));
+        const scale = (0.58 + 0.58 * cState.exhaustLift) * (0.85 + 0.40 * sim.load);
+        _dummy.scale.setScalar(scale);
+        _dummy.updateMatrix();
+        exhaustCylInst.setMatrixAt(i, _dummy.matrix);
+      }
+      exhaustCylInst.instanceMatrix.needsUpdate = true;
+
+      // 4. Update Main Exhaust Trunk Particles (Turbine & Wastegate Bypass)
+      for (let i = 0; i < TOTAL_TRUNK_PARTICLES; i++) {
+        const p = exhaustTrunkParticles[i];
+        const localIdx = i % MAX_TRUNK_PARTICLES_PER_SIDE;
+        if (localIdx >= activeTrunkCount || sim.engineRpm < 50) {
+          exhaustTrunkInst.setMatrixAt(i, _zeroScaleMatrix);
+          continue;
+        }
+        const useWg = p.viaWastegate && (sim.wastegateOpen > 0.08);
+        if (p.viaWastegate && sim.wastegateOpen <= 0.08 && (i % 6 === 0)) {
+          exhaustTrunkInst.setMatrixAt(i, _zeroScaleMatrix);
+          continue;
+        }
+        p.t = (p.t + flowSpeed * 1.15 * dt) % 1;
+        const ep = exhaustTrunkPaths[p.side];
+        const curve = useWg ? ep.wastegate : ep.turbine;
+        const pos = curve.getPointAt(p.t);
+        _dummy.position.copy(pos).add(p.jitter).add(getExplodedPathOffset(ep.sideKey, 'exhaustTrunk'));
+        const scale = 0.78 + 0.45 * sim.load;
+        _dummy.scale.setScalar(scale);
+        _dummy.updateMatrix();
+        exhaustTrunkInst.setMatrixAt(i, _dummy.matrix);
+      }
+      exhaustTrunkInst.instanceMatrix.needsUpdate = true;
+    }
+
+    // =========================================================================
+    // 7. UNIFIED KINEMATICS, THERMODYNAMIC TURBO BOOST & CUTAWAY STATE ENGINE
+    // =========================================================================
+    function computeValveLift(localDeg, openStartDeg, openEndDeg) {
+      let span = openEndDeg - openStartDeg;
+      if (span < 0) span += 720;
+      let rel = localDeg - openStartDeg;
+      if (rel < 0) rel += 720;
+      if (rel >= 0 && rel <= span) {
+        return Math.sin((rel / span) * Math.PI);
+      }
+      return 0;
+    }
+
+    function updateEngineKinematics(crankDeg) {
+      const crankRad = crankDeg * DEG2RAD;
+
+      crankRotatingGroup.rotation.z = -crankRad;
+      camShaftMeshes.forEach((camGrp) => {
+        camGrp.rotation.z = -crankRad * 0.5;
+      });
+      idlerSprockets.forEach((sp) => {
+        sp.rotation.z = crankRad * (CRANK_SPROCKET_R / IDLER_SPROCKET_R);
+      });
+      updateTimingChainLinks(crankDeg);
+
+      const expT = THREE.MathUtils.smoothstep(sim.explodeCurrent, 0.35, 1.0);
+      const crankExplodeOffset = new THREE.Vector3(0, -1.15 * expT, 0);
+
+      CYLINDER_SPECS.forEach((cyl, idx) => {
+        const thetaPinRad = (crankDeg + cyl.deltaDeg) * DEG2RAD;
+        const pinX = CRANK_R * Math.sin(thetaPinRad);
+        const pinY = CRANK_R * Math.cos(thetaPinRad);
+        const pinVec = new THREE.Vector3(pinX, pinY, 0);
+
+        const pProj = pinVec.dot(cyl.u);
+        const qProj = pinVec.dot(cyl.v);
+        const sDist = pProj + Math.sqrt(Math.max(0.0001, CONROD_L * CONROD_L - qProj * qProj));
+        const wristVec = cyl.u.clone().multiplyScalar(sDist);
+
+        const pistonMesh = pistonMeshes[idx];
+        pistonMesh.position.set(wristVec.x, wristVec.y, cyl.z).add(crankExplodeOffset);
+
+        const rodMesh = conrodMeshes[idx];
+        rodMesh.position.set(pinX, pinY, cyl.z).add(crankExplodeOffset);
+        const rodDir = new THREE.Vector3().subVectors(wristVec, pinVec).normalize();
+        rodMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), rodDir);
+
+        const localDeg = (((crankDeg - cyl.tdcDeg) % 720) + 720) % 720;
+        const st = sim.cylStates[idx];
+        st.localDeg = localDeg;
+
+        if (localDeg < 180) {
+          st.strokeName = '作功';
+          st.strokeEn = 'Power';
+          st.pistonDir = localDeg < 4 ? '上止點 TDC' : '下行 ↓';
+        } else if (localDeg < 360) {
+          st.strokeName = '排氣';
+          st.strokeEn = 'Exhaust';
+          st.pistonDir = localDeg < 184 ? '下止點 BDC' : '上行 ↑';
+        } else if (localDeg < 540) {
+          st.strokeName = '進氣';
+          st.strokeEn = 'Intake';
+          st.pistonDir = localDeg < 364 ? '上止點 TDC' : '下行 ↓';
+        } else {
+          st.strokeName = '壓縮';
+          st.strokeEn = 'Compression';
+          st.pistonDir = localDeg < 544 ? '下止點 BDC' : '上行 ↑';
+        }
+
+        const inLift = computeValveLift(localDeg, 350, 580);
+        const exLift = computeValveLift(localDeg, 140, 370);
+        st.intakeLift = inLift;
+        st.exhaustLift = exLift;
+
+        const maxValveTravel = 0.088;
+        const rig = cylinderValveAssemblies[idx];
+
+        rig.intakeValves.forEach((v) => {
+          v.moving.position.y = -inLift * maxValveTravel;
+          v.spring.scale.y = 1 - inLift * 0.25;
+        });
+        rig.exhaustValves.forEach((v) => {
+          v.moving.position.y = -exLift * maxValveTravel;
+          v.spring.scale.y = 1 - exLift * 0.25;
+        });
+
+        const sparkOn = (localDeg >= 706 || localDeg <= 14) && sim.engineOn;
+        st.sparkActive = sparkOn;
+        rig.sparkMat.opacity = sparkOn ? 0.95 : 0.0;
+        rig.sparkCore.scale.setScalar(sparkOn ? (0.85 + Math.random() * 0.45) : 0.01);
+
+        let glow = 0;
+        if (sim.engineOn && localDeg >= 0 && localDeg < 165) {
+          glow = Math.pow(1 - localDeg / 165, 1.55) * (0.35 + 0.65 * sim.load);
+        }
+        st.combustionGlow = glow;
+        rig.combMat.opacity = glow * 0.78;
+      });
+    }
+
+    function stepSimulationPhysics(dt) {
+      const effectiveDt = dt * sim.speedMultiplier;
+
+      const targetThrottle = sim.engineOn ? sim.load : 0.0;
+      sim.throttlePos += (targetThrottle - sim.throttlePos) * Math.min(1, effectiveDt * 18);
+      throttlePlate.rotation.z = (1 - sim.throttlePos) * (Math.PI * 0.46);
+
+      if (!sim.engineOn) {
+        sim.engineRpm += (0 - sim.engineRpm) * Math.min(1, effectiveDt * 2.5);
+        if (sim.engineRpm < 1) sim.engineRpm = 0;
+      } else if (sim.dynoMode) {
+        sim.engineRpm += (sim.targetRpm - sim.engineRpm) * Math.min(1, effectiveDt * 8.0);
+      } else {
+        const loadFreeRevBonus = sim.load * 650;
+        const desired = Math.min(7500, sim.targetRpm + loadFreeRevBonus);
+        sim.engineRpm += (desired - sim.engineRpm) * Math.min(1, effectiveDt * 4.5);
+      }
+
+      if (sim.engineRpm > 0.1) {
+        const degPerSec = (sim.engineRpm / 60) * 360;
+        sim.crankAngleDeg = (sim.crankAngleDeg + degPerSec * effectiveDt) % 720;
+      }
+
+      const rpmNorm = sim.engineRpm / 7500;
+      const exhaustEnergy = sim.engineOn
+        ? Math.pow(rpmNorm, 1.28) * (0.14 + 0.86 * sim.throttlePos)
+        : 0.0;
+
+      const boostTargetLimit = 1.25;
+      const wgTarget = THREE.MathUtils.clamp((sim.boostBar - 0.92) / (boostTargetLimit - 0.92), 0, 1);
+      sim.wastegateOpen += (wgTarget - sim.wastegateOpen) * Math.min(1, effectiveDt * 9.0);
+
+      const turbineDriveFactor = exhaustEnergy * (1 - 0.48 * sim.wastegateOpen);
+      const targetTurboRpm = 14000 + turbineDriveFactor * 156000;
+
+      [ 'L', 'R' ].forEach((side, idx) => {
+        const key = side === 'L' ? 'turboRpmL' : 'turboRpmR';
+        const slightAsym = idx === 0 ? 0.992 : 1.008;
+        const tTarget = (sim.engineRpm < 50 ? 0 : targetTurboRpm * slightAsym);
+        const isSpoolingUp = tTarget > sim[key];
+        const inertiaRate = isSpoolingUp ? 1.55 : 0.58;
+        sim[key] += (tTarget - sim[key]) * Math.min(1, effectiveDt * inertiaRate);
+      });
+
+      const avgTurboRpm = (sim.turboRpmL + sim.turboRpmR) * 0.5;
+      const compressorPotentialBar = Math.max(0, Math.pow(Math.max(0, avgTurboRpm - 22000) / 118000, 1.65) * 1.48);
+
+      let targetManifoldBar;
+      if (sim.engineRpm < 50) {
+        targetManifoldBar = 0.0;
+      } else if (sim.throttlePos < 0.06) {
+        targetManifoldBar = -0.58 * THREE.MathUtils.clamp(sim.engineRpm / 2500, 0.35, 1.0);
+      } else {
+        const intakeSupply = compressorPotentialBar * Math.pow(sim.throttlePos, 0.72);
+        const throttleLoss = (1 - sim.throttlePos) * -0.42;
+        targetManifoldBar = THREE.MathUtils.clamp(intakeSupply + throttleLoss, -0.55, 1.32);
+      }
+
+      const manifoldRate = targetManifoldBar < sim.boostBar ? 8.5 : 3.2;
+      sim.boostBar += (targetManifoldBar - sim.boostBar) * Math.min(1, effectiveDt * manifoldRate);
+
+      const visualSpinScale = 0.00045;
+      sim.turboAngleL = (sim.turboAngleL + sim.turboRpmL * visualSpinScale * effectiveDt * 60) % (Math.PI * 2);
+      sim.turboAngleR = (sim.turboAngleR + sim.turboRpmR * visualSpinScale * effectiveDt * 60) % (Math.PI * 2);
+
+      if (turboSystems.B) {
+        turboSystems.B.compWheel.rotation.z = -sim.turboAngleL;
+        turboSystems.B.turbWheel.rotation.z = -sim.turboAngleL;
+        turboSystems.B.wgFlapperPivot.rotation.x = sim.wastegateOpen * 0.65;
+        turboSystems.B.wgRod.position.z = -0.22 - sim.wastegateOpen * 0.04;
+      }
+      if (turboSystems.A) {
+        turboSystems.A.compWheel.rotation.z = -sim.turboAngleR;
+        turboSystems.A.turbWheel.rotation.z = -sim.turboAngleR;
+        turboSystems.A.wgFlapperPivot.rotation.x = sim.wastegateOpen * 0.65;
+        turboSystems.A.wgRod.position.z = -0.22 - sim.wastegateOpen * 0.04;
+      }
+    }
+
+    function updateExplodedTransforms() {
+      const e = sim.explodeCurrent;
+      explodableParts.forEach((item) => {
+        const localT = THREE.MathUtils.smoothstep(e, item.startStage, item.endStage);
+        item.obj.position.copy(item.basePos).addScaledVector(item.offset, localT);
+      });
+    }
+
+    function applyCutawayVisibility() {
+      const isTransp = sim.viewMode === 'transparent';
+      CYLINDER_SPECS.forEach((cyl, idx) => {
+        const showCut = isTransp && sim.cylCutaway && (cyl.id === sim.selectedCylinder);
+        cylinderNormalMeshes[idx].forEach((m) => { m.visible = !showCut; });
+        cylinderCutawayMeshes[idx].forEach((m) => { m.visible = showCut; });
+      });
+
+      const showTurboCut = isTransp && sim.turboCutaway;
+      turboNormalMeshes.forEach((m) => { m.visible = !showTurboCut; });
+      turboCutawayMeshes.forEach((m) => { m.visible = showTurboCut; });
+    }
+
+    // =========================================================================
+    // 8. UI BINDINGS, MODE SWITCHING, TELEMETRY UPDATES & ANIMATION LOOP
+    // =========================================================================
+    const ui = {
+      telemEngineRpm: document.getElementById('telem-engine-rpm'),
+      telemTurboL: document.getElementById('telem-turbo-l'),
+      telemTurboR: document.getElementById('telem-turbo-r'),
+      telemBoost: document.getElementById('telem-boost'),
+      telemWg: document.getElementById('telem-wg'),
+      telemActiveCyl: document.getElementById('telem-active-cyl'),
+      statusLed: document.getElementById('engine-status-led'),
+
+      slTargetRpm: document.getElementById('sl-target-rpm'),
+      valTargetRpm: document.getElementById('val-target-rpm'),
+      slLoad: document.getElementById('sl-load'),
+      valLoad: document.getElementById('val-load'),
+
+      slCrankDeg: document.getElementById('sl-crank-deg'),
+      valCrankDeg: document.getElementById('val-crank-deg'),
+      mSlCrankDeg: document.getElementById('m-sl-crank-deg'),
+      mValCrankDeg: document.getElementById('m-val-crank-deg'),
+
+      slExplode: document.getElementById('sl-explode'),
+      valExplodePct: document.getElementById('val-explode-pct'),
+      mSlExplode: document.getElementById('m-sl-explode'),
+      mValExplodePct: document.getElementById('m-val-explode-pct'),
+
+      cylCardTitle: document.getElementById('cyl-card-title'),
+      cylStrokeBadge: document.getElementById('cyl-stroke-badge'),
+      cylLocalDeg: document.getElementById('cyl-local-deg'),
+      cylPistonDir: document.getElementById('cyl-piston-dir'),
+      cylValveLift: document.getElementById('cyl-valve-lift'),
+      cylSparkState: document.getElementById('cyl-spark-state'),
+
+      mCylCardTitle: document.getElementById('m-cyl-card-title'),
+      mCylStrokeBadge: document.getElementById('m-cyl-stroke-badge'),
+      mCylLocalDeg: document.getElementById('m-cyl-local-deg'),
+    };
+
+    const cylBtnsDesktop = [];
+    const cylBtnsMobile = [];
+    function buildCylinderSelectorButtons() {
+      const deskGrid = document.getElementById('cyl-selector-grid');
+      const mobGrid = document.getElementById('m-cyl-selector-grid');
+      [1, 3, 5, 7, 2, 4, 6, 8].forEach((cylId) => {
+        const spec = CYLINDER_SPECS[cylId - 1];
+        const btnD = document.createElement('button');
+        btnD.className = 'py-1.5 rounded-lg text-xs font-mono-tech font-bold border transition cursor-pointer';
+        btnD.textContent = `#${cylId} (${spec.bank})`;
+        btnD.addEventListener('click', () => selectCylinder(cylId));
+        deskGrid.appendChild(btnD);
+        cylBtnsDesktop.push({ id: cylId, el: btnD });
+      });
+
+      for (let cylId = 1; cylId <= 8; cylId++) {
+        const btnM = document.createElement('button');
+        btnM.className = 'py-1 rounded-lg text-[11px] font-mono-tech font-bold border transition cursor-pointer';
+        btnM.textContent = `#${cylId}`;
+        btnM.addEventListener('click', () => selectCylinder(cylId));
+        mobGrid.appendChild(btnM);
+        cylBtnsMobile.push({ id: cylId, el: btnM });
+      }
+      refreshCylinderSelectorStyles();
+    }
+
+    function selectCylinder(cylId) {
+      sim.selectedCylinder = cylId;
+      refreshCylinderSelectorStyles();
+      applyCutawayVisibility();
+    }
+
+    function refreshCylinderSelectorStyles() {
+      cylBtnsDesktop.forEach(({ id, el }) => {
+        const active = id === sim.selectedCylinder;
+        el.className = active
+          ? 'py-1.5 rounded-lg text-xs font-mono-tech font-bold border border-sky-400 bg-sky-500/25 text-sky-200 transition cursor-pointer'
+          : 'py-1.5 rounded-lg text-xs font-mono-tech font-bold border border-slate-800 bg-slate-900/80 text-slate-300 hover:bg-slate-800 transition cursor-pointer';
+      });
+      cylBtnsMobile.forEach(({ id, el }) => {
+        const active = id === sim.selectedCylinder;
+        el.className = active
+          ? 'py-1 rounded-lg text-[11px] font-mono-tech font-bold border border-sky-400 bg-sky-500/25 text-sky-200 transition cursor-pointer'
+          : 'py-1 rounded-lg text-[11px] font-mono-tech font-bold border border-slate-800 bg-slate-900/80 text-slate-300 transition cursor-pointer';
+      });
+    }
+    buildCylinderSelectorButtons();
+
+    function setViewMode(targetMode) {
+      if (sim.viewMode === targetMode && !sim.pendingModeAfterReassembly) return;
+
+      if (sim.viewMode === 'exploded' && targetMode !== 'exploded' && sim.explodeCurrent > 0.01) {
+        sim.explodeTarget = 0.0;
+        sim.pendingModeAfterReassembly = targetMode;
+        syncModeButtonsUI(targetMode);
+        return;
+      }
+
+      if (targetMode === 'exploded' && sim.viewMode !== 'exploded') {
+        sim.explodedSnapshot = {
+          playing: sim.playing,
+          crankAngleDeg: sim.crankAngleDeg,
+          turboRpmL: sim.turboRpmL,
+          turboRpmR: sim.turboRpmR,
+          boostBar: sim.boostBar,
+          wastegateOpen: sim.wastegateOpen,
+        };
+        sim.playing = false;
+        syncPlayPauseUI();
+      }
+
+      sim.viewMode = targetMode;
+      sim.pendingModeAfterReassembly = null;
+      syncModeButtonsUI(targetMode);
+      applyHousingTransparency();
+      applyCutawayVisibility();
+    }
+
+    function completeReassemblyRestore(nextMode) {
+      if (sim.explodedSnapshot) {
+        sim.crankAngleDeg = sim.explodedSnapshot.crankAngleDeg;
+        sim.turboRpmL = sim.explodedSnapshot.turboRpmL;
+        sim.turboRpmR = sim.explodedSnapshot.turboRpmR;
+        sim.boostBar = sim.explodedSnapshot.boostBar;
+        sim.wastegateOpen = sim.explodedSnapshot.wastegateOpen;
+        sim.playing = sim.explodedSnapshot.playing;
+        sim.explodedSnapshot = null;
+        syncPlayPauseUI();
+      }
+      sim.viewMode = nextMode;
+      sim.pendingModeAfterReassembly = null;
+      syncModeButtonsUI(nextMode);
+      applyHousingTransparency();
+      applyCutawayVisibility();
+    }
+
+    function syncModeButtonsUI(activeMode) {
+      document.querySelectorAll('.mode-btn').forEach((b) => {
+        const isAct = b.dataset.mode === activeMode;
+        b.className = isAct
+          ? 'mode-btn py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer bg-sky-500 text-slate-950 shadow'
+          : 'mode-btn py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer text-slate-300 hover:text-white';
+      });
+      document.querySelectorAll('.mode-btn-m').forEach((b) => {
+        const isAct = b.dataset.mode === activeMode;
+        b.className = isAct
+          ? 'mode-btn-m py-1 rounded-lg text-[11px] font-semibold bg-sky-500 text-slate-950'
+          : 'mode-btn-m py-1 rounded-lg text-[11px] font-semibold text-slate-300';
+      });
+
+      const pTrans = document.getElementById('panel-transparent');
+      const pExpl = document.getElementById('panel-exploded');
+      pTrans.classList.toggle('hidden', activeMode !== 'transparent');
+      pTrans.classList.toggle('flex', activeMode === 'transparent');
+      pExpl.classList.toggle('hidden', activeMode !== 'exploded');
+      pExpl.classList.toggle('flex', activeMode === 'exploded');
+
+      const mpTrans = document.getElementById('m-panel-transparent');
+      const mpExpl = document.getElementById('m-panel-exploded');
+      mpTrans.classList.toggle('hidden', activeMode !== 'transparent');
+      mpTrans.classList.toggle('flex', activeMode === 'transparent');
+      mpExpl.classList.toggle('hidden', activeMode !== 'exploded');
+      mpExpl.classList.toggle('flex', activeMode === 'exploded');
+    }
+
+    document.querySelectorAll('.mode-btn, .mode-btn-m').forEach((btn) => {
+      btn.addEventListener('click', () => setViewMode(btn.dataset.mode));
+    });
+
+    function bindOpacitySlider(deskId, mobId, deskValId, mobValId, propName) {
+      const sD = document.getElementById(deskId);
+      const sM = document.getElementById(mobId);
+      const vD = document.getElementById(deskValId);
+      const vM = document.getElementById(mobValId);
+      const update = (val) => {
+        sim[propName] = Number(val);
+        sD.value = val;
+        sM.value = val;
+        vD.textContent = `${val}%`;
+        vM.textContent = `${val}%`;
+        applyHousingTransparency();
+      };
+      sD.addEventListener('input', (e) => update(e.target.value));
+      sM.addEventListener('input', (e) => update(e.target.value));
+      return update;
+    }
+
+    const setOpBlock = bindOpacitySlider('sl-op-block', 'm-sl-op-block', 'val-op-block', 'm-val-op-block', 'transpBlock');
+    const setOpHead  = bindOpacitySlider('sl-op-head',  'm-sl-op-head',  'val-op-head',  'm-val-op-head',  'transpHead');
+    const setOpTurbo = bindOpacitySlider('sl-op-turbo', 'm-sl-op-turbo', 'val-op-turbo', 'm-val-op-turbo', 'transpTurbo');
+    const setOpPipe  = bindOpacitySlider('sl-op-pipe',  'm-sl-op-pipe',  'val-op-pipe',  'm-val-op-pipe',  'transpPipe');
+
+    document.getElementById('btn-opacity-preset').addEventListener('click', () => {
+      setOpBlock(75);
+      setOpHead(75);
+      setOpTurbo(75);
+      setOpPipe(70);
+    });
+
+    function setCylCutaway(enabled) {
+      sim.cylCutaway = enabled;
+      ['btn-cyl-cutaway', 'm-btn-cyl-cutaway'].forEach((id) => {
+        const el = document.getElementById(id);
+        el.classList.toggle('border-rose-400', enabled);
+        el.classList.toggle('bg-rose-500/20', enabled);
+        el.classList.toggle('text-rose-200', enabled);
+      });
+      applyCutawayVisibility();
+    }
+    function setTurboCutaway(enabled) {
+      sim.turboCutaway = enabled;
+      ['btn-turbo-cutaway', 'm-btn-turbo-cutaway'].forEach((id) => {
+        const el = document.getElementById(id);
+        el.classList.toggle('border-amber-400', enabled);
+        el.classList.toggle('bg-amber-500/20', enabled);
+        el.classList.toggle('text-amber-200', enabled);
+      });
+      applyCutawayVisibility();
+    }
+
+    document.getElementById('btn-cyl-cutaway').addEventListener('click', () => setCylCutaway(!sim.cylCutaway));
+    document.getElementById('m-btn-cyl-cutaway').addEventListener('click', () => setCylCutaway(!sim.cylCutaway));
+    document.getElementById('btn-turbo-cutaway').addEventListener('click', () => setTurboCutaway(!sim.turboCutaway));
+    document.getElementById('m-btn-turbo-cutaway').addEventListener('click', () => setTurboCutaway(!sim.turboCutaway));
+
+    function setExplodeTargetPct(pct) {
+      const clamped = THREE.MathUtils.clamp(Number(pct), 0, 100);
+      sim.explodeTarget = clamped / 100;
+      ui.slExplode.value = clamped;
+      ui.mSlExplode.value = clamped;
+      ui.valExplodePct.textContent = `${Math.round(clamped)}%`;
+      ui.mValExplodePct.textContent = `${Math.round(clamped)}%`;
+    }
+    ui.slExplode.addEventListener('input', (e) => setExplodeTargetPct(e.target.value));
+    ui.mSlExplode.addEventListener('input', (e) => setExplodeTargetPct(e.target.value));
+    document.querySelectorAll('.exp-preset-btn').forEach((b) => {
+      b.addEventListener('click', () => setExplodeTargetPct(b.dataset.exp));
+    });
+
+    function syncPlayPauseUI() {
+      const btn = document.getElementById('btn-play-pause');
+      btn.textContent = sim.playing ? '暫停' : '繼續播放';
+      btn.classList.toggle('bg-amber-500/25', !sim.playing);
+      btn.classList.toggle('text-amber-200', !sim.playing);
+      btn.classList.toggle('border-amber-400/40', !sim.playing);
+    }
+
+    document.getElementById('btn-ignition').addEventListener('click', () => {
+      sim.engineOn = !sim.engineOn;
+      const btn = document.getElementById('btn-ignition');
+      const lbl = document.getElementById('label-ignition');
+      if (sim.engineOn) {
+        lbl.textContent = '運轉中 (熄火)';
+        btn.className = 'px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-400/40 hover:bg-emerald-500/30 transition cursor-pointer flex items-center gap-1.5';
+        ui.statusLed.className = 'w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-[0_0_10px_#34d399]';
+      } else {
+        lbl.textContent = '已熄火 (啟動)';
+        btn.className = 'px-3 py-1.5 rounded-xl text-xs font-bold bg-rose-500/20 text-rose-300 border border-rose-400/40 hover:bg-rose-500/30 transition cursor-pointer flex items-center gap-1.5';
+        ui.statusLed.className = 'w-2.5 h-2.5 rounded-full bg-rose-500 shadow-[0_0_10px_#f43f5e]';
+      }
+    });
+
+    document.getElementById('btn-play-pause').addEventListener('click', () => {
+      if (sim.viewMode === 'exploded') return;
+      sim.playing = !sim.playing;
+      syncPlayPauseUI();
+    });
+
+    document.getElementById('btn-reset-sim').addEventListener('click', () => {
+      if (sim.viewMode === 'exploded') {
+        setExplodeTargetPct(0);
+        setViewMode('solid');
+      }
+      sim.engineOn = true;
+      sim.playing = true;
+      sim.speedMultiplier = 1.0;
+      sim.dynoMode = false;
+      sim.targetRpm = 1800;
+      sim.engineRpm = 1800;
+      sim.load = 0.35;
+      sim.throttlePos = 0.35;
+      sim.crankAngleDeg = 0;
+      sim.turboRpmL = 28000;
+      sim.turboRpmR = 28000;
+      sim.boostBar = 0.05;
+      sim.wastegateOpen = 0;
+
+      ui.slTargetRpm.value = 1800;
+      ui.valTargetRpm.textContent = '1,800 RPM';
+      ui.slLoad.value = 35;
+      ui.valLoad.textContent = '35%';
+      document.getElementById('label-dyno').textContent = '關';
+      document.getElementById('label-dyno').className = 'text-slate-400';
+      syncSpeedButtons(1.0);
+      syncPlayPauseUI();
+    });
+
+    function syncSpeedButtons(mult) {
+      sim.speedMultiplier = mult;
+      document.querySelectorAll('.speed-btn').forEach((b) => {
+        const active = Number(b.dataset.speed) === mult;
+        b.className = active
+          ? 'speed-btn px-2 py-0.5 rounded-lg text-[11px] font-mono-tech font-semibold bg-sky-500 text-slate-950 cursor-pointer'
+          : 'speed-btn px-2 py-0.5 rounded-lg text-[11px] font-mono-tech font-semibold text-slate-300 hover:text-white cursor-pointer';
+      });
+    }
+    document.querySelectorAll('.speed-btn').forEach((b) => {
+      b.addEventListener('click', () => syncSpeedButtons(Number(b.dataset.speed)));
+    });
+
+    document.getElementById('btn-dyno').addEventListener('click', () => {
+      sim.dynoMode = !sim.dynoMode;
+      const lbl = document.getElementById('label-dyno');
+      lbl.textContent = sim.dynoMode ? '開 (鎖定RPM)' : '關';
+      lbl.className = sim.dynoMode ? 'text-amber-300 font-bold' : 'text-slate-400';
+    });
+
+    function setAirflowMode(mode) {
+      sim.airflowMode = mode;
+      document.querySelectorAll('.flow-btn').forEach((b) => {
+        const act = b.dataset.flow === mode;
+        b.className = act
+          ? 'flow-btn px-2 py-0.5 rounded-lg text-[11px] font-medium bg-sky-500/25 text-sky-200 border border-sky-400/30 cursor-pointer'
+          : 'flow-btn px-2 py-0.5 rounded-lg text-[11px] font-medium text-slate-300 hover:text-white cursor-pointer';
+      });
+    }
+    document.querySelectorAll('.flow-btn').forEach((b) => {
+      b.addEventListener('click', () => setAirflowMode(b.dataset.flow));
+    });
+
+    ui.slTargetRpm.addEventListener('input', (e) => {
+      sim.targetRpm = Number(e.target.value);
+      ui.valTargetRpm.textContent = `${sim.targetRpm.toLocaleString()} RPM`;
+    });
+
+    function setLoadPct(pct) {
+      const v = THREE.MathUtils.clamp(Number(pct), 0, 100);
+      sim.load = v / 100;
+      ui.slLoad.value = v;
+      ui.valLoad.textContent = `${Math.round(v)}%`;
+    }
+    ui.slLoad.addEventListener('input', (e) => setLoadPct(e.target.value));
+    document.querySelectorAll('.load-quick').forEach((b) => {
+      b.addEventListener('click', () => setLoadPct(b.dataset.load));
+    });
+
+    function scrubCrankAngle(newDeg) {
+      sim.playing = false;
+      syncPlayPauseUI();
+      sim.crankAngleDeg = ((newDeg % 720) + 720) % 720;
+      updateEngineKinematics(sim.crankAngleDeg);
+    }
+    ui.slCrankDeg.addEventListener('input', (e) => scrubCrankAngle(Number(e.target.value)));
+    ui.mSlCrankDeg.addEventListener('input', (e) => scrubCrankAngle(Number(e.target.value)));
+    document.querySelectorAll('.step-btn').forEach((b) => {
+      b.addEventListener('click', () => {
+        scrubCrankAngle(sim.crankAngleDeg + Number(b.dataset.step));
+      });
+    });
+
+    document.querySelectorAll('.cam-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.cam-btn').forEach((x) => {
+          x.className = 'cam-btn px-2.5 py-1 rounded-lg text-[11px] font-medium transition cursor-pointer text-slate-300 hover:bg-slate-800/70';
+        });
+        btn.className = 'cam-btn active px-2.5 py-1 rounded-lg text-[11px] font-medium transition cursor-pointer bg-sky-500/25 text-sky-200 border border-sky-400/40';
+        if (btn.dataset.cam === 'timing' && sim.viewMode === 'solid') {
+          setViewMode('transparent');
+        }
+        flyCameraTo(btn.dataset.cam);
+      });
+    });
+    document.getElementById('btn-cam-reset').addEventListener('click', () => {
+      flyCameraTo('default');
+    });
+
+    function toggleQuality() {
+      sim.qualityTier = sim.qualityTier === 'high' ? 'balanced' : 'high';
+      const isHigh = sim.qualityTier === 'high';
+      renderer.setPixelRatio(isHigh ? Math.min(window.devicePixelRatio || 1, 2) : 1);
+      renderer.shadowMap.enabled = isHigh;
+      const label = isHigh ? '高' : '效能';
+      document.getElementById('label-quality').textContent = label;
+      document.getElementById('label-quality-mobile').textContent = label;
+    }
+    document.getElementById('btn-quality').addEventListener('click', toggleQuality);
+    document.getElementById('btn-quality-mobile').addEventListener('click', toggleQuality);
+
+    // Collapsed HUD: completely hide panels with display:none + visibility:hidden + pointer-events:none
+    // so mouse drag/pan/zoom on the 3D canvas works unobstructed over the entire screen!
+    function toggleHudCollapsed() {
+      sim.hudCollapsed = !sim.hudCollapsed;
+      const c = sim.hudCollapsed;
+
+      const inspector = document.getElementById('desktop-inspector');
+      const dock = document.getElementById('bottom-dock');
+      const telem = document.getElementById('hud-telemetry-bar');
+      const topActions = document.getElementById('hud-top-actions');
+      const camBar = document.getElementById('hud-camera-bar');
+      const expandBtn = document.getElementById('btn-expand-hud');
+      const subtitle = document.getElementById('hud-subtitle');
+
+      inspector.style.display = c ? 'none' : '';
+      inspector.style.visibility = c ? 'hidden' : 'visible';
+      inspector.style.pointerEvents = 'none';
+
+      dock.style.display = c ? 'none' : '';
+      dock.style.visibility = c ? 'hidden' : 'visible';
+      dock.style.pointerEvents = 'none';
+
+      telem.style.display = c ? 'none' : '';
+      telem.style.visibility = c ? 'hidden' : 'visible';
+      telem.style.pointerEvents = c ? 'none' : 'auto';
+
+      topActions.style.display = c ? 'none' : '';
+      topActions.style.visibility = c ? 'hidden' : 'visible';
+      topActions.style.pointerEvents = c ? 'none' : 'auto';
+
+      camBar.style.display = c ? 'none' : '';
+      camBar.style.visibility = c ? 'hidden' : 'visible';
+      camBar.style.pointerEvents = c ? 'none' : 'auto';
+
+      if (subtitle) subtitle.style.display = c ? 'none' : '';
+      expandBtn.classList.toggle('hidden', !c);
+    }
+    document.getElementById('btn-toggle-hud').addEventListener('click', toggleHudCollapsed);
+    document.getElementById('btn-toggle-hud-mobile').addEventListener('click', toggleHudCollapsed);
+    document.getElementById('btn-expand-hud').addEventListener('click', toggleHudCollapsed);
+
+    document.querySelectorAll('.mtab-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const tab = btn.dataset.mtab;
+        document.querySelectorAll('.mtab-btn').forEach((b) => {
+          b.className = b.dataset.mtab === tab
+            ? 'mtab-btn flex-1 py-1 rounded-lg text-[11px] font-semibold bg-sky-500 text-slate-950'
+            : 'mtab-btn flex-1 py-1 rounded-lg text-[11px] font-semibold text-slate-300';
+        });
+        document.getElementById('dock-sec-controls').classList.toggle('hidden', tab !== 'controls');
+        document.getElementById('dock-sec-controls').classList.toggle('flex', tab === 'controls');
+        document.getElementById('dock-sec-views').classList.toggle('hidden', tab !== 'views');
+        document.getElementById('dock-sec-views').classList.toggle('flex', tab === 'views');
+        document.getElementById('dock-sec-timing').classList.toggle('hidden', tab !== 'timing');
+        document.getElementById('dock-sec-timing').classList.toggle('flex', tab === 'timing');
+      });
+    });
+
+    const guideModal = document.getElementById('guide-modal');
+    const openGuide = () => guideModal.classList.remove('hidden');
+    const closeGuide = () => guideModal.classList.add('hidden');
+    document.getElementById('btn-guide').addEventListener('click', openGuide);
+    document.getElementById('btn-guide-mobile').addEventListener('click', openGuide);
+    document.getElementById('btn-close-guide').addEventListener('click', closeGuide);
+    document.getElementById('btn-close-guide-2').addEventListener('click', closeGuide);
+
+    document.querySelectorAll('.verify-scenario-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const mode = btn.dataset.verify;
+        closeGuide();
+        if (mode === 'firing') {
+          setViewMode('transparent');
+          setCylCutaway(true);
+          selectCylinder(1);
+          syncSpeedButtons(0.01);
+          sim.engineOn = true;
+          sim.playing = true;
+          syncPlayPauseUI();
+          flyCameraTo('valves');
+        } else if (mode === 'boost') {
+          setViewMode('transparent');
+          setTurboCutaway(true);
+          syncSpeedButtons(1.0);
+          sim.dynoMode = true;
+          document.getElementById('label-dyno').textContent = '開 (鎖定RPM)';
+          document.getElementById('label-dyno').className = 'text-amber-300 font-bold';
+          sim.targetRpm = 4500;
+          ui.slTargetRpm.value = 4500;
+          ui.valTargetRpm.textContent = '4,500 RPM';
+          setLoadPct(100);
+          sim.engineOn = true;
+          sim.playing = true;
+          syncPlayPauseUI();
+          flyCameraTo('turbo');
+        } else if (mode === 'turbo') {
+          setViewMode('transparent');
+          setTurboCutaway(true);
+          setAirflowMode('particles');
+          setLoadPct(85);
+          sim.targetRpm = 3800;
+          ui.slTargetRpm.value = 3800;
+          ui.valTargetRpm.textContent = '3,800 RPM';
+          flyCameraTo('turbo');
+        } else if (mode === 'explode') {
+          sim.boostBar = 1.18;
+          sim.turboRpmL = 138000;
+          sim.turboRpmR = 140000;
+          setViewMode('exploded');
+          setExplodeTargetPct(85);
+          flyCameraTo('default');
+        }
+      });
+    });
+
+    const STROKE_BADGE_CLASSES = {
+      Power:       'px-2 py-0.5 rounded-md text-[11px] font-bold bg-orange-500/20 text-orange-300 border border-orange-400/30',
+      Exhaust:     'px-2 py-0.5 rounded-md text-[11px] font-bold bg-rose-500/20 text-rose-300 border border-rose-400/30',
+      Intake:      'px-2 py-0.5 rounded-md text-[11px] font-bold bg-sky-500/20 text-sky-300 border border-sky-400/30',
+      Compression: 'px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-400/30',
+    };
+
+    function refreshTelemetryUI() {
+      ui.telemEngineRpm.innerHTML = `${Math.round(sim.engineRpm).toLocaleString()} <span class="text-[10px] font-normal text-slate-400">RPM</span>`;
+      ui.telemTurboL.innerHTML = `${Math.round(sim.turboRpmL).toLocaleString()} <span class="text-[10px] font-normal text-slate-400">RPM</span>`;
+      ui.telemTurboR.innerHTML = `${Math.round(sim.turboRpmR).toLocaleString()} <span class="text-[10px] font-normal text-slate-400">RPM</span>`;
+
+      const signStr = sim.boostBar >= 0 ? '+' : '';
+      ui.telemBoost.innerHTML = `${signStr}${sim.boostBar.toFixed(2)} <span class="text-[10px] font-normal text-slate-400">bar</span>`;
+      ui.telemBoost.className = sim.boostBar > 0.25
+        ? 'text-xs md:text-sm font-bold font-mono-tech text-amber-300'
+        : (sim.boostBar < -0.1 ? 'text-xs md:text-sm font-bold font-mono-tech text-sky-300' : 'text-xs md:text-sm font-bold font-mono-tech text-emerald-300');
+
+      ui.telemWg.textContent = `${Math.round(sim.wastegateOpen * 100)}%`;
+
+      let bestIdx = 0;
+      let bestScore = -1;
+      sim.cylStates.forEach((st, idx) => {
+        if (st.strokeEn === 'Power' && st.localDeg < 90) {
+          const score = 90 - st.localDeg;
+          if (score > bestScore) {
+            bestScore = score;
+            bestIdx = idx;
+          }
+        }
+      });
+      const activeSpec = CYLINDER_SPECS[bestIdx];
+      ui.telemActiveCyl.textContent = `#${activeSpec.id} 缸 (${activeSpec.bank}列) · 作功`;
+
+      const degStr = `${sim.crankAngleDeg.toFixed(1)}°`;
+      ui.valCrankDeg.textContent = degStr;
+      ui.mValCrankDeg.textContent = degStr;
+      ui.slCrankDeg.value = sim.crankAngleDeg;
+      ui.mSlCrankDeg.value = sim.crankAngleDeg;
+
+      const selIdx = sim.selectedCylinder - 1;
+      const selSpec = CYLINDER_SPECS[selIdx];
+      const selState = sim.cylStates[selIdx];
+      const bankLabel = selSpec.bank === 'A' ? '右列 A' : '左列 B';
+
+      ui.cylCardTitle.textContent = `第 ${selSpec.id} 缸 · ${bankLabel}`;
+      ui.cylStrokeBadge.textContent = `${selState.strokeName} (${selState.strokeEn})`;
+      ui.cylStrokeBadge.className = STROKE_BADGE_CLASSES[selState.strokeEn];
+      ui.cylLocalDeg.textContent = `${Math.round(selState.localDeg)}° / 720°`;
+      ui.cylPistonDir.textContent = selState.pistonDir;
+      ui.cylValveLift.textContent = `${(selState.intakeLift * 10.8).toFixed(1)} / ${(selState.exhaustLift * 10.2).toFixed(1)} mm`;
+      ui.cylSparkState.textContent = selState.sparkActive ? '點火 ⚡' : '待機';
+      ui.cylSparkState.className = selState.sparkActive ? 'text-sky-300 font-bold' : 'text-slate-400';
+
+      ui.mCylCardTitle.textContent = `第 ${selSpec.id} 缸 (${selSpec.bank}列)`;
+      ui.mCylStrokeBadge.textContent = selState.strokeName;
+      ui.mCylStrokeBadge.className = STROKE_BADGE_CLASSES[selState.strokeEn];
+      ui.mCylLocalDeg.textContent = `${Math.round(selState.localDeg)}°`;
+    }
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    let lastFrameTime = performance.now();
+    function animate(now) {
+      requestAnimationFrame(animate);
+      const rawDt = Math.min((now - lastFrameTime) / 1000, 0.05);
+      lastFrameTime = now;
+
+      if (cameraTransition) {
+        cameraTransition.progress = Math.min(1, cameraTransition.progress + rawDt * 2.6);
+        const ease = 1 - Math.pow(1 - cameraTransition.progress, 3);
+        camera.position.lerpVectors(cameraTransition.startPos, cameraTransition.endPos, ease);
+        controls.target.lerpVectors(cameraTransition.startTarget, cameraTransition.endTarget, ease);
+        if (cameraTransition.progress >= 1) cameraTransition = null;
+      }
+
+      if (Math.abs(sim.explodeCurrent - sim.explodeTarget) > 0.0005) {
+        sim.explodeCurrent += (sim.explodeTarget - sim.explodeCurrent) * Math.min(1, rawDt * 7.5);
+        if (Math.abs(sim.explodeCurrent - sim.explodeTarget) <= 0.002) {
+          sim.explodeCurrent = sim.explodeTarget;
+          if (sim.explodeCurrent === 0 && sim.pendingModeAfterReassembly) {
+            completeReassemblyRestore(sim.pendingModeAfterReassembly);
+          }
+        }
+        updateExplodedTransforms();
+      }
+
+      if (sim.playing && sim.viewMode !== 'exploded') {
+        stepSimulationPhysics(rawDt);
+      }
+
+      updateEngineKinematics(sim.crankAngleDeg);
+      updateAirflowVisuals(rawDt);
+      refreshTelemetryUI();
+
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    window.addEventListener('load', () => {
+      updateEngineKinematics(0);
+      applyHousingTransparency();
+      const loader = document.getElementById('loading-overlay');
+      if (loader) {
+        loader.style.opacity = '0';
+        setTimeout(() => loader.remove(), 500);
+      }
+      requestAnimationFrame(animate);
+    });
+  </script>
+</body>
+</html>
