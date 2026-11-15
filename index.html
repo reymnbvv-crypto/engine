@@ -5338,12 +5338,15 @@ void main() {
       });
     });
 
+    const CAM_OFFSET = 0.34;
+    const CAM_HEIGHT = 0.88;
     const camShaftMeshes = [];
+    const camShaftsByBank = { A: {}, B: {} };
     const camSpecs = [
-      { bank: 'A', role: 'intake',  localX: -0.34 },
-      { bank: 'A', role: 'exhaust', localX:  0.34 },
-      { bank: 'B', role: 'intake',  localX:  0.34 },
-      { bank: 'B', role: 'exhaust', localX: -0.34 },
+      { bank: 'A', role: 'intake',  localX: -CAM_OFFSET },
+      { bank: 'A', role: 'exhaust', localX: CAM_OFFSET },
+      { bank: 'B', role: 'intake',  localX: CAM_OFFSET },
+      { bank: 'B', role: 'exhaust', localX: -CAM_OFFSET },
     ];
 
     const camCentersWorld = [];
@@ -5352,7 +5355,7 @@ void main() {
       const bankSign = cs.bank === 'A' ? 1 : -1;
       const headGroup = bankGroups[cs.bank];
       const camGroup = new THREE.Group();
-      const camLocalY = DECK_DIST + 0.88;
+      const camLocalY = DECK_DIST + CAM_HEIGHT;
       camGroup.position.set(cs.localX, camLocalY, 0);
       headGroup.add(camGroup);
 
@@ -5376,30 +5379,8 @@ void main() {
         direction: 1, mountZ: -alpha, mesh: sprock,
       });
 
-      const bankCyls = CYLINDER_SPECS.filter((c) => c.bank === cs.bank);
-      const lobeShape = new THREE.Shape();
-      lobeShape.absarc(0, 0, 0.115, 0, Math.PI, false);
-      lobeShape.lineTo(-0.045, -0.22);
-      lobeShape.absarc(0, -0.22, 0.045, Math.PI, Math.PI * 2, false);
-      lobeShape.closePath();
-      const lobeGeo = new THREE.ExtrudeGeometry(lobeShape, { depth: 0.065, bevelEnabled: false });
-      lobeGeo.center();
-
-      bankCyls.forEach((cyl) => {
-        const peakCrankDeg = cs.role === 'intake'
-          ? (cyl.tdcDeg + 465) % 720
-          : (cyl.tdcDeg + 255) % 720;
-        const lobeAngleRad = (peakCrankDeg * 0.5) * DEG2RAD;
-
-        [-0.14, 0.14].forEach((zOff) => {
-          const lobe = new THREE.Mesh(lobeGeo, MAT.crankMachined);
-          lobe.position.z = cyl.z + zOff;
-          lobe.rotation.z = -lobeAngleRad;
-          camGroup.add(lobe);
-        });
-      });
-
       camShaftMeshes.push(camGroup);
+      camShaftsByBank[cs.bank][cs.role] = camGroup;
     });
 
     // -------------------------------------------------------------------------
@@ -5652,13 +5633,227 @@ void main() {
       const curve = new THREE.CatmullRomCurve3(pts);
       return new THREE.TubeGeometry(curve, segments, wireRadius, 6, false);
     }
-    const baseSpringGeo = createHelicalSpringGeometry(0.068, 0.34, 5.5, 0.013, 84);
+    const SPRING_LENGTH = 0.34;
+    const baseSpringGeo = createHelicalSpringGeometry(0.068, SPRING_LENGTH, 5.5, 0.013, 84);
 
     const cylinderValveAssemblies = [];
     const HEAD_HALF_WIDTH = 0.68;
     const HEAD_HEIGHT = 0.84;
     const HEAD_HALF_LENGTH = 1.93;
     const VALVE_ANGLE = 18 * DEG2RAD;
+    const VALVE_STEM_LENGTH = 0.68;
+    const VALVE_TRAVEL = 0.088;
+    const VALVE_SEAT_X = 0.21;
+    const VALVE_SEAT_Y = 0.04;
+    const ROLLER_RADIUS = 0.044;
+    const ROCKER_PAD_RADIUS = 0.030;
+    const CAM_BASE_RADIUS = 0.104;
+
+    // Each timing window uses crank degrees after that cylinder's firing TDC.
+    function valveTiming(opens, closes) {
+      return {
+        peakCrankDeg: (opens + closes) / 2,
+        halfCamWindow: (closes - opens) * DEG2RAD / 4,
+      };
+    }
+
+    const VALVE_TIMING = {
+      intake: valveTiming(350, 580),
+      exhaust: valveTiming(140, 370),
+    };
+
+    function valveLiftAtCamPhase(phase, timing) {
+      const fromPeak = THREE.MathUtils.euclideanModulo(phase + Math.PI, TURN) - Math.PI;
+      let fromSeat = timing.halfCamWindow - Math.abs(fromPeak);
+      if (fromSeat <= 0) return 0;
+
+      // Blend the opening and seating ramps to zero velocity and acceleration.
+      // Keep the existing opening, peak and closing angles.
+      const ramp = Math.min(20 * DEG2RAD, timing.halfCamWindow);
+      if (fromSeat < ramp) {
+        const u = fromSeat / ramp;
+        fromSeat = ramp * u * u * u * (6 + u * (-8 + 3 * u));
+      }
+      return Math.sin(fromSeat * Math.PI / (2 * timing.halfCamWindow));
+    }
+
+    const camAxis = new THREE.Vector2(CAM_OFFSET, CAM_HEIGHT);
+    const rockerOrigin = new THREE.Vector2();
+    const stemAxis = new THREE.Vector2(Math.sin(VALVE_ANGLE), Math.cos(VALVE_ANGLE));
+    const stemNormal = new THREE.Vector2(stemAxis.y, -stemAxis.x);
+    const padRest = new THREE.Vector2(VALVE_SEAT_X, VALVE_SEAT_Y)
+      .addScaledVector(stemAxis, VALVE_STEM_LENGTH + ROCKER_PAD_RADIUS);
+    // The pad's arc crosses the center of the same stem tip at both ends of travel.
+    const rockerPivot = padRest.clone()
+      .addScaledVector(stemAxis, -VALVE_TRAVEL / 2)
+      .addScaledVector(stemNormal, -0.216);
+    const padArm = padRest.clone().sub(rockerPivot);
+    const padArmLength = padArm.length();
+    const rockerRestAngle = Math.asin(VALVE_TRAVEL / (2 * padArmLength));
+    const rollerX = 0.315;
+    const rollerY = CAM_HEIGHT - Math.sqrt((CAM_BASE_RADIUS + ROLLER_RADIUS) ** 2 - (rollerX - CAM_OFFSET) ** 2);
+    const rollerArm = new THREE.Vector2(rollerX, rollerY).sub(rockerPivot);
+
+    function rockerAngleAtLift(lift) {
+      return Math.asin((0.5 - lift) * VALVE_TRAVEL / padArmLength) - rockerRestAngle;
+    }
+
+    function rollerCenterInCam(phase, timing, side) {
+      const angle = rockerAngleAtLift(valveLiftAtCamPhase(phase, timing));
+      const center = rollerArm.clone().rotateAround(rockerOrigin, angle).add(rockerPivot).sub(camAxis);
+      center.x *= side;
+      return center.rotateAround(rockerOrigin, phase);
+    }
+
+    const lobeGeometries = new Map();
+    function camLobeGeometry(timing, side) {
+      const key = side * timing.halfCamWindow;
+      if (lobeGeometries.has(key)) return lobeGeometries.get(key);
+
+      // Offset the roller-center curve inward by a roller radius along its normal.
+      const count = 360;
+      const outline = Array.from({ length: count }, (_, index) => {
+        const phase = index * TURN / count;
+        const tangent = rollerCenterInCam(phase + 0.0001, timing, side)
+          .sub(rollerCenterInCam(phase - 0.0001, timing, side)).normalize();
+        const normal = new THREE.Vector2(tangent.y, -tangent.x);
+        const point = rollerCenterInCam(phase, timing, side).addScaledVector(normal, -ROLLER_RADIUS);
+        return { point, normal };
+      });
+
+      const halfWidth = 0.036;
+      const bevel = 0.004;
+      const positions = [];
+      const normals = [];
+      const uvs = [];
+      const indices = [];
+      const bands = [-halfWidth, -halfWidth + bevel, halfWidth - bevel, halfWidth];
+      bands.forEach((z, band) => {
+        const edge = band === 0 || band === bands.length - 1;
+        const normalScale = edge ? Math.SQRT1_2 : 1;
+        const axialNormal = edge ? Math.sign(z) * Math.SQRT1_2 : 0;
+        outline.forEach(({ point, normal }) => {
+          const inset = edge ? bevel : 0;
+          positions.push(point.x - inset * normal.x, point.y - inset * normal.y, z);
+          normals.push(normal.x * normalScale, normal.y * normalScale, axialNormal);
+          uvs.push(0.5 + 2.5 * point.x + z, 0.5 + 2.5 * point.y + 0.6 * z);
+        });
+        if (band === 0) return;
+        const a = (band - 1) * count;
+        const b = band * count;
+        for (let i = 0; i < count; i++) {
+          const next = (i + 1) % count;
+          indices.push(a + i, a + next, b + i, a + next, b + next, b + i);
+        }
+      });
+
+      for (const sideZ of [-1, 1]) {
+        const center = positions.length / 3;
+        positions.push(0, 0, sideZ * halfWidth);
+        normals.push(0, 0, sideZ);
+        uvs.push(0.5, 0.5);
+        outline.forEach(({ point, normal }, index) => {
+          positions.push(point.x - bevel * normal.x, point.y - bevel * normal.y, sideZ * halfWidth);
+          normals.push(0, 0, sideZ);
+          uvs.push(0.5 + 2.5 * point.x, 0.5 + 2.5 * point.y);
+          const a = center + 1 + index;
+          const b = center + 1 + (index + 1) % count;
+          if (sideZ > 0) indices.push(center, a, b);
+          else indices.push(center, b, a);
+        });
+      }
+
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+      geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+      geometry.setIndex(indices);
+      lobeGeometries.set(key, geometry);
+      return geometry;
+    }
+
+    function rockerCheekGeometry() {
+      const rx = rollerArm.x;
+      const ry = rollerArm.y;
+      const px = padArm.x;
+      const py = padArm.y;
+      const shape = new THREE.Shape();
+      shape.moveTo(-0.025, -0.015);
+      shape.quadraticCurveTo(-0.041, 0.017, -0.016, 0.028);
+      shape.quadraticCurveTo(rx * 0.56, 0.033, rx + 0.014, ry + 0.027);
+      shape.lineTo(px - 0.011, py + 0.020);
+      shape.quadraticCurveTo(px + 0.026, py + 0.019, px + 0.025, py - 0.003);
+      shape.quadraticCurveTo(px + 0.021, py - 0.017, px + 0.006, py - 0.020);
+      shape.lineTo(rx + 0.019, ry - 0.032);
+      shape.quadraticCurveTo(rx * 0.65, ry - 0.038, -0.025, -0.015);
+      shape.closePath();
+      const depth = 0.015;
+      const geometry = new THREE.ExtrudeGeometry(shape, {
+        depth, bevelEnabled: true, bevelSize: 0.003, bevelThickness: 0.003,
+        bevelSegments: 1, curveSegments: 8,
+      });
+      geometry.translate(0, 0, -depth / 2);
+      return geometry;
+    }
+
+    const rockerCheek = rockerCheekGeometry();
+    const rollerGeometry = new THREE.CylinderGeometry(ROLLER_RADIUS, ROLLER_RADIUS, 0.083, 48).rotateX(Math.PI / 2);
+    const shoeGeometry = new THREE.CylinderGeometry(ROCKER_PAD_RADIUS, ROCKER_PAD_RADIUS, 0.052, 32).rotateX(Math.PI / 2);
+    const rockerPin = new THREE.CylinderGeometry(0.019, 0.019, 0.129, 18).rotateX(Math.PI / 2);
+    const rollerPin = new THREE.CylinderGeometry(0.017, 0.017, 0.133, 18).rotateX(Math.PI / 2);
+    const followerSupport = new THREE.CylinderGeometry(0.023, 0.029, 0.122, 16);
+
+    function mountValveRocker(cyl, rig, valve, role) {
+      const side = Math.sign(valve.pivot.position.x);
+      const shaft = camShaftsByBank[cyl.bank][role];
+      const timing = VALVE_TIMING[role];
+      const peakCrank = THREE.MathUtils.euclideanModulo(cyl.tdcDeg + timing.peakCrankDeg, 720);
+      const lobe = new THREE.Mesh(camLobeGeometry(timing, side), MAT.crankMachined);
+      lobe.position.z = cyl.z + valve.pivot.position.z;
+      lobe.rotation.z = peakCrank * DEG2RAD / 2;
+      lobe.castShadow = true;
+      shaft.add(lobe);
+
+      const mount = new THREE.Group();
+      mount.position.set(side * rockerPivot.x, rockerPivot.y, valve.pivot.position.z);
+      mount.scale.x = side;
+      rig.add(mount);
+
+      const support = new THREE.Mesh(followerSupport, MAT.crankWebDark);
+      support.position.y = -0.065;
+      mount.add(support, new THREE.Mesh(rockerPin, MAT.boltChrome));
+
+      const rocker = new THREE.Group();
+      mount.add(rocker);
+      [-0.052, 0.052].forEach((z) => {
+        const cheek = new THREE.Mesh(rockerCheek, MAT.crankWebDark);
+        cheek.position.z = z;
+        cheek.castShadow = true;
+        rocker.add(cheek);
+      });
+
+      const wheel = new THREE.Mesh(rollerGeometry, MAT.camShaftSteel);
+      wheel.position.set(rollerArm.x, rollerArm.y, 0);
+      const axle = new THREE.Mesh(rollerPin, MAT.goldAnodized);
+      axle.position.copy(wheel.position);
+      const shoe = new THREE.Mesh(shoeGeometry, MAT.crankMachined);
+      shoe.position.set(padArm.x, padArm.y, 0);
+      rocker.add(wheel, axle, shoe);
+      return { ...valve, rocker, lobe, shaft, timing };
+    }
+
+    function updateValvePair(valves) {
+      const { lobe, shaft, timing } = valves[0];
+      const lift = valveLiftAtCamPhase(-shaft.rotation.z - lobe.rotation.z, timing);
+      const travel = lift * VALVE_TRAVEL;
+      const rockerAngle = rockerAngleAtLift(lift);
+      valves.forEach((valve) => {
+        valve.rocker.rotation.z = rockerAngle;
+        valve.moving.position.y = -travel;
+        valve.spring.scale.y = 1 - travel / SPRING_LENGTH;
+      });
+      return lift;
+    }
 
     function orientPortFace(object, position, normal) {
       object.position.copy(position);
@@ -5713,17 +5908,17 @@ void main() {
 
       [-0.14, 0.14].forEach((zOff) => {
         const inPivot = new THREE.Group();
-        inPivot.position.set(inSign * 0.21, 0.04, zOff);
+        inPivot.position.set(inSign * VALVE_SEAT_X, VALVE_SEAT_Y, zOff);
         inPivot.rotation.z = -inSign * VALVE_ANGLE;
         cylRig.add(inPivot);
 
         const inMoving = new THREE.Group();
         inPivot.add(inMoving);
         const inStem = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.016, 0.016, 0.68, 12),
+          new THREE.CylinderGeometry(0.016, 0.016, VALVE_STEM_LENGTH, 12),
           MAT.valvePolished
         );
-        inStem.position.y = 0.34;
+        inStem.position.y = VALVE_STEM_LENGTH / 2;
         inMoving.add(inStem);
         const inHead = new THREE.Mesh(
           new THREE.CylinderGeometry(0.115, 0.03, 0.035, 20),
@@ -5741,20 +5936,20 @@ void main() {
         const inSpring = new THREE.Mesh(baseSpringGeo, MAT.springSteel);
         inSpring.position.y = 0.28;
         inPivot.add(inSpring);
-        intakeValves.push({ pivot: inPivot, moving: inMoving, spring: inSpring });
+        intakeValves.push(mountValveRocker(cyl, cylRig, { pivot: inPivot, moving: inMoving, spring: inSpring }, 'intake'));
 
         const exPivot = new THREE.Group();
-        exPivot.position.set(exSign * 0.21, 0.04, zOff);
+        exPivot.position.set(exSign * VALVE_SEAT_X, VALVE_SEAT_Y, zOff);
         exPivot.rotation.z = -exSign * VALVE_ANGLE;
         cylRig.add(exPivot);
 
         const exMoving = new THREE.Group();
         exPivot.add(exMoving);
         const exStem = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.016, 0.016, 0.68, 12),
+          new THREE.CylinderGeometry(0.016, 0.016, VALVE_STEM_LENGTH, 12),
           MAT.valvePolished
         );
-        exStem.position.y = 0.34;
+        exStem.position.y = VALVE_STEM_LENGTH / 2;
         exMoving.add(exStem);
         const exHead = new THREE.Mesh(
           new THREE.CylinderGeometry(0.098, 0.028, 0.035, 20),
@@ -5772,7 +5967,7 @@ void main() {
         const exSpring = new THREE.Mesh(baseSpringGeo, MAT.springSteel);
         exSpring.position.y = 0.28;
         exPivot.add(exSpring);
-        exhaustValves.push({ pivot: exPivot, moving: exMoving, spring: exSpring });
+        exhaustValves.push(mountValveRocker(cyl, cylRig, { pivot: exPivot, moving: exMoving, spring: exSpring }, 'exhaust'));
       });
 
       const intakePort = buildCylinderHeadPort(cylRig, intakeValves.map((valve) => valve.pivot), inSign, 0.235, 0.082, 0.091, MAT.chargePipe);
@@ -6482,7 +6677,7 @@ void main() {
       const discRadius = branch.radius + (reverse ? 0.020 : 0.024);
       const routes = VALVE_THRU_LIFTS.map((lift) => {
         // Pass above the moving valve rim through the opening at the current lift band.
-        const gap = lift * 0.088;
+        const gap = lift * VALVE_TRAVEL;
         const slit = branch.seat.clone().addScaledVector(branch.axis, -0.5 * gap);
         const inboardRim = slit.clone().addScaledVector(radial, -discRadius * 1.07);
         const route = new THREE.CatmullRomCurve3([
@@ -6854,17 +7049,6 @@ void main() {
     // =========================================================================
     // 7. UNIFIED KINEMATICS, THERMODYNAMIC TURBO BOOST & CUTAWAY STATE ENGINE
     // =========================================================================
-    function computeValveLift(localDeg, openStartDeg, openEndDeg) {
-      let span = openEndDeg - openStartDeg;
-      if (span < 0) span += 720;
-      let rel = localDeg - openStartDeg;
-      if (rel < 0) rel += 720;
-      if (rel >= 0 && rel <= span) {
-        return Math.sin((rel / span) * Math.PI);
-      }
-      return 0;
-    }
-
     function updateEngineKinematics(crankDeg) {
       const crankRad = crankDeg * DEG2RAD;
 
@@ -6918,22 +7102,9 @@ void main() {
           st.pistonDir = localDeg < 544 ? '下止點 BDC' : '上行 ↑';
         }
 
-        const inLift = computeValveLift(localDeg, 350, 580);
-        const exLift = computeValveLift(localDeg, 140, 370);
-        st.intakeLift = inLift;
-        st.exhaustLift = exLift;
-
-        const maxValveTravel = 0.088;
         const rig = cylinderValveAssemblies[idx];
-
-        rig.intakeValves.forEach((v) => {
-          v.moving.position.y = -inLift * maxValveTravel;
-          v.spring.scale.y = 1 - inLift * 0.25;
-        });
-        rig.exhaustValves.forEach((v) => {
-          v.moving.position.y = -exLift * maxValveTravel;
-          v.spring.scale.y = 1 - exLift * 0.25;
-        });
+        st.intakeLift = updateValvePair(rig.intakeValves);
+        st.exhaustLift = updateValvePair(rig.exhaustValves);
 
         const sparkOn = (localDeg >= 706 || localDeg <= 14) && sim.engineOn;
         st.sparkActive = sparkOn;
